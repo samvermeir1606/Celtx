@@ -1,0 +1,109 @@
+/* Scriptdesk — script page formatting (shared by the editor and printing)
+   Page: 8.5in wide, 1.5in left margin, 1in right margin → 6in text column.
+   12pt Courier = 10 characters per inch, 6 lines per inch. */
+
+.script-text, .script-font {
+  font-family: "Courier Prime", "Courier New", Courier, monospace;
+  font-size: 12pt;
+  line-height: calc(1in / 6);
+}
+.script-text { color: var(--paper-text); counter-reset: scene page panel; }
+.script-text .el { position: relative; white-space: pre-wrap; overflow-wrap: break-word; min-height: calc(1in / 6); margin-top: calc(1in / 6); }
+.script-text .el:first-child { margin-top: 0; }
+
+/* ---------- screenplay (default) ---------- */
+.script-text .el[data-type="scene"] { text-transform: uppercase; margin-top: calc(2in / 6); }
+.script-text .el:first-child[data-type="scene"] { margin-top: 0; }
+.script-text.bold-scenes .el[data-type="scene"] { font-weight: 700; }
+.script-text .el[data-type="character"] { text-transform: uppercase; margin-left: 2.2in; }
+.script-text .el[data-type="parenthetical"] { margin-top: 0; margin-left: 1.6in; max-width: 2.4in; }
+.script-text .el[data-type="dialogue"] { margin-top: 0; margin-left: 1in; max-width: 3.5in; }
+.script-text .el[data-type="transition"] { text-transform: uppercase; text-align: right; }
+.script-text .el[data-type="shot"] { text-transform: uppercase; }
+
+/* scene numbers */
+.script-text.scene-numbers .el[data-type="scene"] { counter-increment: scene; }
+.script-text.scene-numbers .el[data-type="scene"]::before { content: counter(scene); position: absolute; left: -0.75in; color: var(--paper-muted); }
+
+/* ---------- stage play ---------- */
+.script-text[data-script-type="stageplay"] .el[data-type="scene"] { text-align: center; text-decoration: underline; }
+.script-text[data-script-type="stageplay"] .el[data-type="character"] { margin-left: 0; text-align: center; }
+.script-text[data-script-type="stageplay"] .el[data-type="dialogue"] { margin-left: 0; max-width: none; }
+.script-text[data-script-type="stageplay"] .el[data-type="parenthetical"] { margin-left: 1.5in; max-width: 3in; font-style: italic; }
+.script-text[data-script-type="stageplay"] .el[data-type="action"] { margin-left: 2in; font-style: italic; }
+
+/* ---------- audio play ---------- */
+.script-text[data-script-type="audioplay"] .el[data-type="character"] { margin-left: 0; }
+.script-text[data-script-type="audioplay"] .el[data-type="parenthetical"] { margin-left: 1.5in; }
+.script-text[data-script-type="audioplay"] .el[data-type="dialogue"] { margin-left: 1.5in; max-width: 4.5in; }
+.script-text[data-script-type="audioplay"] .el[data-type="sound"] { text-transform: uppercase; font-weight: 700; margin-left: 1.5in; }
+.script-text[data-script-type="audioplay"] .el[data-type="music"] { text-transform: uppercase; font-style: italic; text-decoration: underline; margin-left: 1.5in; }
+.script-text[data-script-type="audioplay"] .el[data-type="action"] { font-style: italic; }
+
+/* ---------- comic book ---------- */
+.script-text[data-script-type="comic"] .el[data-type="page"] { counter-increment: page; counter-reset: panel; margin-top: calc(3in / 6); font-weight: 700; text-transform: uppercase; text-decoration: underline; }
+.script-text[data-script-type="comic"] .el:first-child[data-type="page"] { margin-top: 0; }
+.script-text[data-script-type="comic"] .el[data-type="page"]::before { content: "PAGE " counter(page) " "; }
+.script-text[data-script-type="comic"] .el[data-type="page"]:not(.is-empty)::before { content: "PAGE " counter(page) " — "; }
+.script-text[data-script-type="comic"] .el[data-type="panel"] { counter-increment: panel; font-weight: 700; text-transform: uppercase; }
+.script-text[data-script-type="comic"] .el[data-type="panel"]::before { content: "PANEL " counter(panel) ". "; }
+.script-text[data-script-type="comic"] .el[data-type="character"] { margin-left: 1.5in; }
+.script-text[data-script-type="comic"] .el[data-type="dialogue"] { margin-top: 0; margin-left: 1in; max-width: 4in; }
+.script-text[data-script-type="comic"] .el[data-type="caption"] { margin-left: 1in; }
+.script-text[data-script-type="comic"] .el[data-type="caption"]::before { content: "CAPTION: "; font-weight: 700; }
+.script-text[data-script-type="comic"] .el[data-type="sfx"] { margin-left: 1in; }
+.script-text[data-script-type="comic"] .el[data-type="sfx"]::before { content: "SFX: "; font-weight: 700; }
+
+/* ---------- editor-only hints ---------- */
+.editor .el.current { background: color-mix(in srgb, var(--accent) 5%, transparent); box-shadow: -0.12in 0 0 -0.08in var(--accent); }
+.editor .el.current.is-empty::after {
+  content: attr(data-label);
+  position: absolute; top: 0; left: 0; right: 0;
+  color: var(--paper-muted); font-style: italic; text-transform: none; font-weight: 400; text-decoration: none;
+  pointer-events: none; white-space: nowrap;
+}
+.editor .el[data-type="transition"].current.is-empty::after { left: auto; right: 0; }
+.editor[data-script-type="stageplay"] .el.current.is-empty[data-type="character"]::after,
+.editor[data-script-type="stageplay"] .el.current.is-empty[data-type="scene"]::after { text-align: center; }
+.editor[data-script-type="comic"] .el.current.is-empty[data-type="page"]::after,
+.editor[data-script-type="comic"] .el.current.is-empty[data-type="panel"]::after { content: ""; }
+
+/* ---------- title page ---------- */
+.title-page { position: relative; height: 9in; color: var(--paper-text); }
+.title-preview .title-page { height: 9in; }
+.title-preview { padding: 1in; }
+.tp-center { position: absolute; top: 2.6in; left: 0; right: 0; text-align: center; }
+.tp-title { text-transform: uppercase; text-decoration: underline; font-weight: 700; }
+.tp-credit { margin-top: calc(2in / 6); }
+.tp-author { margin-top: calc(1in / 6); }
+.tp-source { margin-top: calc(2in / 6); }
+.tp-contact { position: absolute; left: 0; bottom: 0; max-width: 3.4in; }
+.tp-draft { position: absolute; right: 0; bottom: 0; text-align: right; max-width: 3in; }
+
+/* ---------- printing ---------- */
+@media print {
+  @page {
+    margin: 1in 1in 0.8in 1.5in;
+    @top-right { content: counter(page) "."; font-family: "Courier Prime", "Courier New", monospace; font-size: 12pt; vertical-align: bottom; padding-bottom: 0.3in; }
+  }
+  @page :first { @top-right { content: none; } }
+  @page titlepage {
+    margin: 1in;
+    @top-right { content: none; }
+  }
+  .print-script .title-page { page: titlepage; break-after: page; height: 9in; color: #000; }
+  .print-script .script-text { color: #000; --paper-muted: #555; }
+  .print-script .el.is-empty { visibility: hidden; }
+  .print-script .el[data-type="scene"],
+  .print-script .el[data-type="character"],
+  .print-script .el[data-type="parenthetical"],
+  .print-script .el[data-type="page"],
+  .print-script .el[data-type="panel"] { break-after: avoid; }
+  .print-script .el[data-type="dialogue"], .print-script .el[data-type="action"] { orphans: 2; widows: 2; }
+
+  .print-report { font: 11pt/1.4 system-ui, sans-serif; color: #000; }
+  .print-report h1 { font-size: 16pt; margin: 0 0 12pt; }
+  .print-report table.report, .print-report .bd-sheet { background: #fff; border-color: #bbb; }
+  .print-report table.report th { background: #eee; color: #333; }
+  .print-report table.report td { border-color: #ccc; }
+}
