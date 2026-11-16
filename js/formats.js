@@ -73,22 +73,7 @@
 
   SD.UPPERCASE_TYPES = new Set(['scene', 'character', 'transition', 'shot', 'page', 'panel', 'sound']);
 
-  SD.CATEGORIES = [
-    { id: 'character', label: 'Characters', one: 'Character', color: '#e5484d' },
-    { id: 'location', label: 'Locations', one: 'Location', color: '#0090ff' },
-    { id: 'prop', label: 'Props', one: 'Prop', color: '#8e4ec6' },
-    { id: 'wardrobe', label: 'Wardrobe', one: 'Wardrobe', color: '#d6409f' },
-    { id: 'makeup', label: 'Makeup / Hair', one: 'Makeup / Hair', color: '#f76b15' },
-    { id: 'extras', label: 'Extras', one: 'Extra', color: '#ad7f58' },
-    { id: 'vehicle', label: 'Vehicles', one: 'Vehicle', color: '#12a594' },
-    { id: 'animal', label: 'Animals', one: 'Animal', color: '#46a758' },
-    { id: 'setdressing', label: 'Set Dressing', one: 'Set Dressing', color: '#978365' },
-    { id: 'sfx', label: 'Special Effects', one: 'Special Effect', color: '#ffc53d' },
-    { id: 'sound', label: 'Sound', one: 'Sound', color: '#3e63dd' },
-    { id: 'music', label: 'Music', one: 'Music', color: '#6e56cf' },
-    { id: 'other', label: 'Other', one: 'Other', color: '#8b8d98' },
-  ];
-  SD.categoryById = (id) => SD.CATEGORIES.find((c) => c.id === id) || SD.CATEGORIES[SD.CATEGORIES.length - 1];
+  // Catalog categories and forms live in catalog.js
 
   SD.SCENE_COLORS = ['', '#e5484d', '#f76b15', '#ffc53d', '#46a758', '#12a594', '#0090ff', '#8e4ec6', '#d6409f', '#8b8d98'];
 
@@ -135,10 +120,11 @@
     p.title = p.title || 'Untitled Project';
     p.settings = Object.assign({}, base.settings, p.settings || {});
     p.catalog = Array.isArray(p.catalog) ? p.catalog : [];
-    p.catalog.forEach((c) => { c.id = c.id || SD.uid(); c.category = c.category || 'other'; c.name = c.name || ''; c.description = c.description || ''; });
+    p.catalog.forEach((c) => SD.normalizeCatalogItem(c));
     p.documents.forEach((d) => {
       d.id = d.id || SD.uid();
       if (d.kind === 'note') { d.text = d.text || ''; d.name = d.name || 'Notes'; return; }
+      if (d.kind === 'storyline') { d.name = d.name || 'Storyline'; SD.normalizeStoryline(d); return; }
       d.kind = 'script';
       if (!SD.SCRIPT_TYPES[d.scriptType]) d.scriptType = 'screenplay';
       d.name = d.name || SD.SCRIPT_TYPES[d.scriptType].label;

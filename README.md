@@ -10,12 +10,23 @@ A scriptwriting tool in the spirit of the old Celtx desktop app. It runs in the 
 - **Project tree** that can hold several scripts plus notes documents.
 - **Scene navigator** showing page-length estimates in eighths.
 - **Scene panel** for each scene's synopsis, colour, notes, characters (detected automatically) and breakdown items (props, wardrobe, vehicles, effects…).
-- **Master Catalog** of characters, locations, props and so on, shared by every script in the project.
+- **Master Catalog** shared by every script in the project, with a detailed form for each kind of item, following the old Celtx forms:
+  - **Character:** physical description, personality, motivation, background, voice, arc, and *Played by* (an Actor).
+  - **Actor:** roles, availability, contact details and wardrobe sizes.
+  - **Location:** address, contact and facility details.
+  - **Props, wardrobe and other production items:** who uses them, size, era, procurement and supplier.
+  - **Every item:** photos, tags, your own extra fields, and a list of the scenes it appears in.
+- **Character sheets and actor packs:** printable pages that give an actor the full profile of their character, the scene list, and *sides* (the text of their scenes with their lines in bold).
 - **Index cards** that you drag to reorder scenes.
+- **Storyline:** a flow chart with one line per character, drawn across the moments of your story:
+  - Lines bundle together when characters share a moment, split when they go separate ways, and turn into dashed lines while a character is off-screen.
+  - You mark events (meetings, conflicts, turning points, revelations…) on the lines of the characters they affect.
+  - You can build it from a script's scenes and update it later, or draw it by hand in the grid.
+  - It downloads as SVG or prints to PDF.
 - **Title page.**
 - **Reports:** scene list, characters (speeches and word counts), locations, and breakdown sheets.
 - **Print or save as PDF**, with standard screenplay margins and page numbers.
-- **Import** `.celtx` (old Celtx desktop projects), `.fountain` and `.fdx` (Final Draft).
+- **Import** `.fountain`, `.fdx` (Final Draft) and `.celtx`. A `.celtx` import (from the old Celtx desktop app) brings in scripts, text documents, the full catalog (with photos and actor links), scene synopses, colours, notes and breakdown tags.
 - **Export** `.fountain`, `.fdx` and formatted `.txt`.
 - **Undo/redo for each document** and light/dark themes.
 
@@ -43,6 +54,8 @@ To publish on GitHub Pages:
 | `css/app.css` | Application UI |
 | `css/script.css` | Script page formatting (screen and print) |
 | `js/formats.js` | Script types, elements, page estimates, helpers |
+| `js/catalog.js` | Catalog categories, the form for each category, links between items |
+| `js/storyline.js` | Storyline chart: data, layout, script sync, SVG drawing |
 | `js/formats-io.js` | Fountain, Final Draft and Celtx import/export |
 | `js/editor.js` | The script editor |
 | `js/app.js` | Project, views, files, dialogs |

@@ -127,6 +127,7 @@
     state.project.modified = new Date().toISOString();
     renderSaveState();
     autosave();
+    if (isCatalog()) renderStatusSoon();
   }
 
   function renderSaveState() {
@@ -230,8 +231,8 @@
   function renderDocList() {
     const list = $('#doc-list');
     const items = state.project.documents.map((d) => {
-      const icon = d.kind === 'note' ? '📝' : SD.SCRIPT_TYPES[d.scriptType].icon;
-      const sub = d.kind === 'note' ? 'Notes' : SD.SCRIPT_TYPES[d.scriptType].label;
+      const icon = d.kind === 'note' ? '📝' : d.kind === 'storyline' ? '〰️' : SD.SCRIPT_TYPES[d.scriptType].icon;
+      const sub = d.kind === 'note' ? 'Notes' : d.kind === 'storyline' ? 'Storyline' : SD.SCRIPT_TYPES[d.scriptType].label;
       return h('li', {
         class: 'doc-item' + (d.id === state.docId ? ' active' : ''),
         title: sub,
@@ -266,7 +267,12 @@
     let d;
     const count = (pred) => state.project.documents.filter(pred).length;
     if (kind === 'note') d = SD.newNote(count((x) => x.kind === 'note') ? 'Notes ' + (count((x) => x.kind === 'note') + 1) : 'Notes');
-    else {
+    else if (kind === 'storyline') {
+      const n = count((x) => x.kind === 'storyline');
+      d = SD.newStoryline('Storyline' + (n ? ' ' + (n + 1) : ''));
+      const scripts = state.project.documents.filter((x) => x.kind === 'script' && SD.getScenes(x).length);
+      if (scripts.length === 1) SD.syncStorylineFromScript(state.project, d, scripts[0]);
+    } else {
       const n = count((x) => x.scriptType === kind);
       d = SD.newScript(kind, SD.SCRIPT_TYPES[kind].label + (n ? ' ' + (n + 1) : ''));
       d.titlePage.title = state.project.title !== 'Untitled Project' ? state.project.title : '';
@@ -362,7 +368,21 @@
   function renderNavigator() {
     const list = $('#scene-list');
     const d = currentDoc();
+    if (d && d.kind === 'storyline') {
+      $('#scene-head-label').textContent = 'Moments';
+      $('#scene-count').textContent = d.beats.length || '';
+      const cur = storyBeatOf(d, storySel(d));
+      list.replaceChildren(...(d.beats.length ? d.beats.map((b, i) => h('li', {
+        class: 'scene-item' + (cur === b ? ' current' : ''),
+        style: b.groups[0] && b.groups[0].color ? `--scene-color:${b.groups[0].color}` : '',
+        onclick: () => { setStorySel(d, 'beat', b.id); state.storyRefresh && state.storyRefresh(); renderNavigator(); },
+      }, h('span', { class: 'scene-num' }, b.sceneId ? (b.number || i + 1) : '◆'),
+      h('span', { class: 'scene-text' }, b.label || (b.groups[0] && b.groups[0].label) || 'Moment ' + (i + 1)),
+      h('span', { class: 'scene-len' }, b.events.length ? b.events.length + '★' : ''))) : [h('li', { class: 'side-empty' }, 'No moments yet.')]));
+      return;
+    }
     if (!d || d.kind !== 'script') {
+      $('#scene-head-label').textContent = 'Scenes';
       list.replaceChildren(h('li', { class: 'side-empty' }, isCatalog() ? 'Pick a script to see its scenes.' : 'Notes have no scenes.'));
       $('#scene-count').textContent = '';
       return;
@@ -427,6 +447,7 @@
       if (isCatalog()) renderCatalog(ov);
       else if (!d) ov.append(h('div', { class: 'empty-state' }, h('p', {}, 'This project has no documents. Use + in the sidebar to add one.')));
       else if (d.kind === 'note') renderNote(ov, d);
+      else if (d.kind === 'storyline') renderStoryline(ov, d);
       else if (state.view === 'title') renderTitleView(ov, d);
       else if (state.view === 'cards') renderCards(ov, d);
       else if (state.view === 'reports') renderReports(ov, d);
@@ -448,6 +469,13 @@
     if (isCatalog()) { tabs.replaceChildren(h('div', { class: 'view-title' }, '🗂️ Master Catalog')); return; }
     if (!d) { tabs.replaceChildren(); return; }
     if (d.kind === 'note') { tabs.replaceChildren(h('div', { class: 'view-title' }, '📝 ' + d.name)); return; }
+    if (d.kind === 'storyline') {
+      tabs.replaceChildren(...[['flow', 'Flow'], ['grid', 'Grid']].map(([v, label]) => h('button', {
+        class: 'tab' + ((state.storyTab || 'flow') === v ? ' active' : ''),
+        onclick: () => { state.storyTab = v; renderView(); },
+      }, label)));
+      return;
+    }
     const defs = [['script', 'Script'], ['title', 'Title Page'], ['cards', d.scriptType === 'comic' ? 'Page Cards' : 'Index Cards'], ['reports', 'Reports']];
     tabs.replaceChildren(...defs.map(([v, label]) => h('button', {
       class: 'tab' + (state.view === v ? ' active' : ''),
@@ -458,6 +486,17 @@
   function renderToolbar() {
     const tb = $('#toolbar');
     const d = currentDoc();
+    if (d && d.kind === 'storyline') {
+      const refresh = () => state.storyRefresh && state.storyRefresh();
+      tb.replaceChildren(
+        h('button', { class: 'btn small', onclick: () => { const sel = storySel(d); const b = storyBeatOf(d, sel); storyAddBeat(d, b ? d.beats.indexOf(b) : undefined); refresh(); } }, '+ Moment'),
+        h('button', { class: 'btn small', onclick: (e) => storyAddCharacterMenu(e.currentTarget, d, (row) => { setStorySel(d, 'row', row.id); refresh(); }) }, '+ Character'),
+        h('button', { class: 'btn small', title: 'Pull scenes and who is in them from a script', onclick: (e) => storyBuildMenu(e.currentTarget, d, refresh) }, d.sourceId ? '⟳ Update from script' : 'Build from script…'),
+        h('div', { class: 'tb-group' },
+          h('button', { class: 'btn ghost small', title: 'Download as an SVG image', onclick: () => download(safeName(d.name) + '.svg', storylineSVGForExport(d), 'image/svg+xml') }, 'SVG'),
+          h('button', { class: 'btn ghost small', title: 'Print or save as PDF', onclick: () => printStoryline(d) }, 'Print')));
+      return;
+    }
     if (!d || d.kind !== 'script' || state.view !== 'script') { tb.replaceChildren(); return; }
     const types = SD.SCRIPT_TYPES[d.scriptType];
     const sel = h('select', {
@@ -512,7 +551,7 @@
     const touched = () => { editor.refreshState(); markDirty(); };
 
     const nameInput = h('input', { class: 'input', placeholder: 'Item name', list: 'catalog-names' });
-    const catSelect = h('select', { class: 'select' }, SD.CATEGORIES.filter((c) => c.id !== 'character' && c.id !== 'location').concat(SD.CATEGORIES.filter((c) => c.id === 'character' || c.id === 'location'))
+    const catSelect = h('select', { class: 'select' }, SD.CATEGORIES.filter((c) => c.breakdown && c.id !== 'character' && c.id !== 'location').concat(SD.CATEGORIES.filter((c) => c.id === 'character' || c.id === 'location'))
       .map((c) => h('option', { value: c.id }, c.one)));
     catSelect.value = state.lastBreakdownCat || 'prop';
     const datalist = h('datalist', { id: 'catalog-names' }, state.project.catalog.map((c) => h('option', { value: c.name })));
@@ -542,13 +581,22 @@
         })))),
       h('div', { class: 'ins-section' },
         h('label', { class: 'lbl' }, 'Characters in scene'),
-        chars.length ? h('div', { class: 'chips' }, chars.map((n) => h('span', { class: 'chip', style: `--chip:${SD.categoryById('character').color}` }, n))) : h('p', { class: 'muted small' }, 'None yet — they appear automatically from Character elements.')),
+        chars.length ? h('div', { class: 'chips' }, chars.map((n) => {
+          const item = SD.findCatalogItem(state.project, 'character', n);
+          const actor = item && item.links.playedBy && state.project.catalog.find((c) => c.id === item.links.playedBy);
+          return h('button', {
+            class: 'chip link', style: `--chip:${SD.categoryById('character').color}`,
+            title: item ? 'Open character profile' : 'Create a character profile',
+            onclick: () => openCatalogItem(item ? item.id : null, { category: 'character', name: n }),
+          }, n, actor ? h('span', { class: 'chip-sub' }, ' · ' + actor.name) : null);
+        })) : h('p', { class: 'muted small' }, 'None yet — they appear automatically from Character elements.')),
       h('div', { class: 'ins-section' },
         h('label', { class: 'lbl' }, 'Breakdown'),
         items.length
           ? h('div', { class: 'breakdown' }, [...grouped.entries()].map(([cat, list]) => h('div', { class: 'bd-group' },
             h('div', { class: 'bd-cat', style: `--chip:${SD.categoryById(cat).color}` }, SD.categoryById(cat).label),
-            h('div', { class: 'chips' }, list.map((it) => h('span', { class: 'chip', style: `--chip:${SD.categoryById(cat).color}` }, it.name,
+            h('div', { class: 'chips' }, list.map((it) => h('span', { class: 'chip', style: `--chip:${SD.categoryById(cat).color}` },
+              h('button', { class: 'chip-name', title: 'Open in catalog', onclick: () => openCatalogItem(it.id) }, it.name),
               h('button', { class: 'chip-x', title: 'Remove from scene', 'aria-label': 'Remove ' + it.name, onclick: () => { e.items = e.items.filter((x) => x !== it.id); touched(); renderInspector(); } }, '×')))))))
           : h('p', { class: 'muted small' }, 'Tag props, wardrobe, vehicles, effects… used in this scene.'),
         h('div', { class: 'bd-add' }, catSelect, nameInput, datalist,
@@ -588,7 +636,7 @@
     if (!name) { toast('Type a name for the item first.'); return; }
     const cat = state.project.catalog;
     let item = cat.find((c) => c.category === category && c.name.trim().toUpperCase() === name.toUpperCase());
-    if (!item) { item = { id: SD.uid(), category, name, description: '' }; cat.push(item); }
+    if (!item) { item = SD.newCatalogItem(category, name); cat.push(item); }
     sceneEl.items = sceneEl.items || [];
     if (!sceneEl.items.includes(item.id)) sceneEl.items.push(item.id);
     editor.refreshState();
@@ -790,6 +838,265 @@
   }
   const stat = (label, value) => h('div', { class: 'stat' }, h('div', { class: 'stat-v' }, value), h('div', { class: 'stat-l' }, label));
 
+  // ---------- Storyline (character flow chart) ----------
+  const storySel = (d) => (state.storySel && state.storySel.doc === d.id ? state.storySel : { doc: d.id });
+  const setStorySel = (d, type, id) => { state.storySel = { doc: d.id, type, id }; };
+
+  function storyBeatOf(d, sel) {
+    if (sel.type === 'beat') return d.beats.find((b) => b.id === sel.id);
+    if (sel.type === 'group') return d.beats.find((b) => b.groups.some((g) => g.id === sel.id));
+    if (sel.type === 'event') return d.beats.find((b) => b.events.some((e) => e.id === sel.id));
+    return null;
+  }
+
+  function storyAddCharacterMenu(anchor, d, done) {
+    const p = state.project;
+    const used = new Set(d.rows.map((r) => r.charId).filter(Boolean));
+    const usedNames = new Set(d.rows.map((r) => SD.storyRowName(p, r).toUpperCase()));
+    const chars = p.catalog.filter((c) => c.category === 'character' && !used.has(c.id) && !usedNames.has(c.name.toUpperCase()))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const add = (row) => { d.rows.push(row); markDirty(); done(row); };
+    const items = chars.map((c) => ({ label: c.name || 'Unnamed', run: () => add({ id: SD.uid(), name: c.name, charId: c.id, color: SD.nextStoryColor(d) }) }));
+    if (items.length) items.push('-');
+    items.push({
+      label: 'New character…', run: async () => {
+        const name = await promptText('New character in this storyline', '');
+        if (!name || !name.trim()) return;
+        const c = SD.findCatalogItem(p, 'character', name);
+        add({ id: SD.uid(), name: name.trim().toUpperCase(), charId: c ? c.id : null, color: SD.nextStoryColor(d) });
+      },
+    });
+    popupMenu(anchor, items);
+  }
+
+  function storyBuildMenu(anchor, d, done) {
+    const scripts = state.project.documents.filter((x) => x.kind === 'script');
+    if (!scripts.length) { toast('There is no script in this project yet.'); return; }
+    popupMenu(anchor, scripts.map((s) => ({
+      label: (s.id === d.sourceId ? '✓ ' : '') + s.name + ' — ' + SD.getScenes(s).length + ' scenes',
+      run: () => { const r = SD.syncStorylineFromScript(state.project, d, s); markDirty(); toast(`Synced with “${s.name}”: ${r.scenes} scenes${r.added ? `, ${r.added} new` : ''}.`); done(); },
+    })));
+  }
+
+  // Put a character into one group of a moment (or take them out with gi = -1).
+  function storySetMembership(beat, rowId, gi) {
+    beat.groups.forEach((g, i) => {
+      const had = g.members.includes(rowId);
+      if (i === gi && !had) { g.members.push(rowId); if (g.fromScript) g.manual = [...new Set([...(g.manual || []), rowId])]; }
+      if (i !== gi && had) { g.members = g.members.filter((x) => x !== rowId); if (g.manual) g.manual = g.manual.filter((x) => x !== rowId); }
+    });
+  }
+
+  function renderStoryline(root, d) {
+    const p = state.project;
+    const canvas = h('div', { class: 'story-canvas' });
+    const panel = h('aside', { class: 'story-panel' });
+    root.append(h('div', { class: 'story' }, canvas, panel));
+    const tab = state.storyTab || 'flow';
+
+    const changed = () => { markDirty(); drawCanvas(); renderNavigatorSoon(); renderStatusSoon(); };
+    const select = (type, id) => { setStorySel(d, type, id); drawCanvas(); drawPanel(); };
+    const full = () => { drawCanvas(); drawPanel(); renderNavigatorSoon(); renderStatusSoon(); };
+    state.storyRefresh = full;
+
+    const drawCanvas = () => {
+      const sel = storySel(d);
+      if (!d.beats.length || !d.rows.length) {
+        const scripts = p.documents.filter((x) => x.kind === 'script' && SD.getScenes(x).length);
+        canvas.replaceChildren(h('div', { class: 'empty-state story-empty' },
+          h('div', { class: 'empty-icon' }, '〰️'),
+          h('h3', {}, 'Draw how your characters move through the story'),
+          h('p', { class: 'muted' }, 'Each character is a line. Lines run together when characters share a moment and split when they go separate ways. Mark meetings, conflicts and turning points on the lines.'),
+          h('div', { class: 'row-gap center' },
+            scripts.length ? h('button', { class: 'btn primary', onclick: (e) => storyBuildMenu(e.currentTarget, d, full) }, 'Build from a script…') : null,
+            h('button', { class: 'btn', onclick: (e) => storyAddCharacterMenu(e.currentTarget, d, (row) => { setStorySel(d, 'row', row.id); full(); }) }, '+ Add character'),
+            h('button', { class: 'btn', onclick: () => { storyAddBeat(d); full(); } }, '+ Add moment')),
+          h('p', { class: 'muted small' }, `${d.rows.length} characters · ${d.beats.length} moments`)));
+        return;
+      }
+      if (tab === 'grid') { canvas.replaceChildren(storyGrid(d, sel, select, changed, full)); return; }
+      const { svg } = SD.renderStorylineSVG(p, d, { selection: sel });
+      const sx = canvas.scrollLeft, sy = canvas.scrollTop;
+      canvas.innerHTML = svg;
+      canvas.scrollLeft = sx; canvas.scrollTop = sy;
+    };
+
+    canvas.addEventListener('click', (e) => {
+      if (tab !== 'flow') return;
+      const t = e.target.closest('[data-event],[data-group],[data-row],[data-beat]');
+      if (!t) { select(null, null); return; }
+      if (t.dataset.event) select('event', t.dataset.event);
+      else if (t.dataset.group) select('group', t.dataset.group);
+      else if (t.dataset.row) select('row', t.dataset.row);
+      else select('beat', t.dataset.beat);
+    });
+
+    const drawPanel = () => panel.replaceChildren(...storyPanel(d, storySel(d), { select, changed, full }));
+    full();
+  }
+
+  function storyAddBeat(d, afterIdx) {
+    const b = { id: SD.uid(), label: '', groups: [{ id: SD.uid(), label: '', members: [] }], events: [] };
+    const i = afterIdx == null ? d.beats.length : afterIdx + 1;
+    d.beats.splice(i, 0, b);
+    markDirty();
+    setStorySel(d, 'beat', b.id);
+    return b;
+  }
+
+  function storyGrid(d, sel, select, changed, full) {
+    const p = state.project;
+    const head = h('tr', {}, h('th', { class: 'sg-corner' }, 'Character / moment'),
+      d.beats.map((b, i) => h('th', { class: 'sg-beat' + (storyBeatOf(d, sel) === b ? ' on' : '') + (b.orphan ? ' orphan' : '') },
+        h('button', { onclick: () => select('beat', b.id), title: b.label },
+          h('span', { class: 'sg-num' }, b.sceneId ? 'Sc ' + (b.number || i + 1) : '◆ ' + (i + 1)),
+          h('span', { class: 'sg-lbl' }, b.label || (b.groups[0] && b.groups[0].label) || 'Moment')))),
+      h('th', { class: 'sg-add' }, h('button', { class: 'icon-btn', title: 'Add moment', 'aria-label': 'Add moment', onclick: () => { storyAddBeat(d); full(); } }, '+')));
+    const rows = d.rows.map((r) => h('tr', { class: sel.type === 'row' && sel.id === r.id ? 'on' : '' },
+      h('th', { class: 'sg-name' }, h('button', { onclick: () => select('row', r.id) }, h('span', { class: 'sg-dot', style: `background:${r.color}` }), SD.storyRowName(p, r))),
+      d.beats.map((b) => {
+        const gi = b.groups.findIndex((g) => g.members.includes(r.id));
+        const evs = b.events.filter((e) => e.rows.includes(r.id));
+        const g = b.groups[gi];
+        return h('td', {},
+          h('button', {
+            class: 'sg-cell' + (gi >= 0 ? ' in' : ''),
+            style: gi >= 0 ? `--c:${r.color}` : '',
+            title: gi >= 0 ? (b.groups.length > 1 ? `In “${g.label || 'group ' + (gi + 1)}” — click to move` : 'Present — click to remove') : 'Not here — click to add',
+            onclick: () => {
+              if (!b.groups.length) b.groups.push({ id: SD.uid(), label: '', members: [] });
+              const next = gi + 1 >= b.groups.length ? -1 : gi + 1;
+              storySetMembership(b, r.id, next);
+              changed();
+              full();
+            },
+          }, gi >= 0 && b.groups.length > 1 ? String.fromCharCode(65 + gi) : '', evs.map((e) => h('span', { class: 'sg-ev', title: e.label }, (SD.STORY_EVENT_KINDS.find((k) => k.id === e.kind) || {}).icon || '●'))));
+      })));
+    return h('div', { class: 'story-grid-wrap' },
+      h('table', { class: 'story-grid' }, h('thead', {}, head), h('tbody', {}, rows)),
+      h('p', { class: 'muted small sg-help' }, 'Click a cell to put a character in a moment. When a moment has several groups (A, B…), clicking moves the character to the next group, then out.'));
+  }
+
+  function storyChips(d, selected, onToggle) {
+    const p = state.project;
+    return h('div', { class: 'chips toggle-chips' }, d.rows.map((r) => {
+      const on = selected.includes(r.id);
+      return h('button', { class: 'chip toggle' + (on ? ' on' : ''), style: `--chip:${r.color}`, 'aria-pressed': String(on), onclick: () => onToggle(r.id, !on) }, SD.storyRowName(p, r));
+    }));
+  }
+
+  function storyPanel(d, sel, ui) {
+    const p = state.project;
+    const sec = (...kids) => h('div', { class: 'ins-section' }, ...kids);
+    const s = d.settings;
+
+    if (sel.type === 'row') {
+      const r = d.rows.find((x) => x.id === sel.id);
+      if (!r) { ui.select(null, null); return []; }
+      const c = r.charId && p.catalog.find((x) => x.id === r.charId);
+      const idx = d.rows.indexOf(r);
+      const count = d.beats.filter((b) => b.groups.some((g) => g.members.includes(r.id))).length;
+      const evCount = d.beats.reduce((n, b) => n + b.events.filter((e) => e.rows.includes(r.id)).length, 0);
+      return [
+        sec(h('div', { class: 'ins-kicker' }, 'Character line'),
+          c ? h('div', { class: 'ins-title' }, c.name)
+            : h('input', { class: 'input', value: r.name, placeholder: 'Name', oninput: (e) => { r.name = e.target.value; ui.changed(); } }),
+          h('p', { class: 'muted small' }, `In ${count} of ${d.beats.length} moments · ${evCount} events`),
+          h('div', { class: 'row-gap' },
+            c ? h('button', { class: 'btn small', onclick: () => openCatalogItem(c.id) }, 'Open profile')
+              : h('button', { class: 'btn small', onclick: () => { const it = SD.findCatalogItem(p, 'character', r.name) || SD.newCatalogItem('character', r.name.toUpperCase()); if (!p.catalog.includes(it)) p.catalog.push(it); r.charId = it.id; ui.changed(); ui.full(); renderDocList(); } }, 'Create catalog profile'))),
+        sec(h('label', { class: 'lbl' }, 'Colour'),
+          h('div', { class: 'swatches' }, SD.STORY_PALETTE.map((col) => h('button', { class: 'swatch' + (r.color === col ? ' on' : ''), style: `background:${col}`, 'aria-label': 'Colour ' + col, onclick: () => { r.color = col; ui.changed(); ui.full(); } })))),
+        sec(h('label', { class: 'lbl' }, 'Order'),
+          h('p', { class: 'muted small' }, 'Lines are sorted to avoid crossings; this order is the starting point.'),
+          h('div', { class: 'row-gap' },
+            h('button', { class: 'btn small', disabled: idx === 0, onclick: () => { d.rows.splice(idx, 1); d.rows.splice(idx - 1, 0, r); ui.changed(); ui.full(); } }, '↑ Up'),
+            h('button', { class: 'btn small', disabled: idx === d.rows.length - 1, onclick: () => { d.rows.splice(idx, 1); d.rows.splice(idx + 1, 0, r); ui.changed(); ui.full(); } }, '↓ Down'),
+            h('button', {
+              class: 'btn small danger', onclick: () => {
+                d.rows.splice(idx, 1);
+                for (const b of d.beats) { b.groups.forEach((g) => { g.members = g.members.filter((x) => x !== r.id); }); b.events.forEach((e) => { e.rows = e.rows.filter((x) => x !== r.id); }); }
+                ui.select(null, null); ui.changed();
+              },
+            }, 'Remove from storyline'))),
+      ];
+    }
+
+    const beat = storyBeatOf(d, sel);
+    if (beat) {
+      const bi = d.beats.indexOf(beat);
+      const script = beat.sceneId && p.documents.find((x) => x.id === d.sourceId);
+      const groups = beat.groups.map((g, gi) => h('div', { class: 'sp-card' + (sel.type === 'group' && sel.id === g.id ? ' on' : ''), style: `--chip:${g.color || '#8b8d98'}` },
+        h('div', { class: 'sp-card-head' },
+          h('span', { class: 'sp-badge' }, beat.groups.length > 1 ? String.fromCharCode(65 + gi) : '●'),
+          h('input', { class: 'lbl-input', value: g.label, placeholder: beat.groups.length > 1 ? 'Where / which group?' : 'Where are they? (optional)', oninput: (e) => { g.label = e.target.value; ui.changed(); } }),
+          h('button', { class: 'icon-btn', title: 'Delete group', 'aria-label': 'Delete group', onclick: () => { beat.groups.splice(gi, 1); ui.changed(); ui.full(); } }, '×')),
+        storyChips(d, g.members, (id, on) => { storySetMembership(beat, id, on ? gi : -1); ui.changed(); ui.full(); }),
+        g.fromScript ? h('div', { class: 'help-text' }, 'From the script — characters with dialogue in the scene.') : null));
+      const events = beat.events.map((e, ei) => h('div', { class: 'sp-card ev' + (sel.type === 'event' && sel.id === e.id ? ' on' : '') },
+        h('div', { class: 'sp-card-head' },
+          h('select', { class: 'select small', onchange: (ev) => { e.kind = ev.target.value; ui.changed(); } }, SD.STORY_EVENT_KINDS.map((k) => h('option', { value: k.id, selected: k.id === e.kind }, k.icon + ' ' + k.label))),
+          h('button', { class: 'icon-btn', title: 'Delete event', 'aria-label': 'Delete event', onclick: () => { beat.events.splice(ei, 1); ui.changed(); ui.full(); } }, '×')),
+        h('input', { class: 'input', value: e.label, placeholder: 'What happens? e.g. “Tom tells Mary the truth”', oninput: (ev) => { e.label = ev.target.value; ui.changed(); } }),
+        h('div', { class: 'help-text' }, 'Who is affected?'),
+        storyChips(d, e.rows, (id, on) => { e.rows = on ? [...e.rows, id] : e.rows.filter((x) => x !== id); ui.changed(); ui.full(); })));
+      return [
+        sec(h('div', { class: 'ins-kicker' }, beat.sceneId ? `Scene ${beat.number || bi + 1} · from “${script ? script.name : 'script'}”` : `Moment ${bi + 1}`),
+          beat.orphan ? h('p', { class: 'warn small' }, 'This scene is no longer in the script.') : null,
+          h('textarea', { class: 'input', rows: 2, value: beat.label, placeholder: 'Name this moment', oninput: (e) => { beat.label = e.target.value; if (beat.sceneId) beat.customLabel = true; ui.changed(); } }),
+          h('div', { class: 'row-gap' },
+            beat.sceneId && script && !beat.orphan ? h('button', { class: 'btn small', onclick: () => { state.docId = script.id; state.view = 'script'; renderDocList(); renderView(); requestAnimationFrame(() => editor.goTo(beat.sceneId)); } }, 'Go to scene') : null,
+            h('button', { class: 'btn small', disabled: bi === 0, title: 'Move earlier', onclick: () => { d.beats.splice(bi, 1); d.beats.splice(bi - 1, 0, beat); ui.changed(); ui.full(); } }, '←'),
+            h('button', { class: 'btn small', disabled: bi === d.beats.length - 1, title: 'Move later', onclick: () => { d.beats.splice(bi, 1); d.beats.splice(bi + 1, 0, beat); ui.changed(); ui.full(); } }, '→'),
+            h('button', { class: 'btn small', title: 'Insert a new moment after this one', onclick: () => { storyAddBeat(d, bi); ui.full(); } }, '+ After'),
+            h('button', { class: 'btn small danger', onclick: () => { d.beats.splice(bi, 1); ui.select(null, null); ui.changed(); } }, 'Delete'))),
+        sec(h('label', { class: 'lbl' }, 'Who is together?'),
+          h('p', { class: 'muted small' }, 'Characters in the same group are drawn as one bundle. Add a second group when characters are in different places at the same time.'),
+          groups,
+          h('button', { class: 'btn ghost small', onclick: () => { beat.groups.push({ id: SD.uid(), label: '', members: [] }); ui.changed(); ui.full(); } }, '+ Add a group')),
+        sec(h('label', { class: 'lbl' }, 'Events'),
+          h('p', { class: 'muted small' }, 'Meetings, fights, discoveries… marked on the lines of the characters they affect.'),
+          events,
+          h('button', { class: 'btn ghost small', onclick: () => { const ev = { id: SD.uid(), kind: 'meet', label: '', rows: [...new Set(beat.groups.flatMap((g) => g.members))] }; beat.events.push(ev); setStorySel(d, 'event', ev.id); ui.changed(); ui.full(); } }, '+ Add an event')),
+      ];
+    }
+
+    // nothing selected: overview
+    return [
+      sec(h('div', { class: 'ins-kicker' }, 'Storyline'),
+        h('p', { class: 'muted small' }, 'Click a line, a moment header, a group or an event to edit it. Use the Grid tab to quickly tick who is in each moment.')),
+      sec(h('label', { class: 'lbl' }, `Characters (${d.rows.length})`),
+        h('div', { class: 'story-rowlist' }, d.rows.map((r) => h('button', { class: 'story-rowbtn', onclick: () => ui.select('row', r.id) }, h('span', { class: 'sg-dot', style: `background:${r.color}` }), SD.storyRowName(p, r)))),
+        h('button', { class: 'btn ghost small', onclick: (e) => storyAddCharacterMenu(e.currentTarget, d, (row) => { ui.select('row', row.id); ui.changed(); }) }, '+ Add character')),
+      sec(h('label', { class: 'lbl' }, 'Script'),
+        h('p', { class: 'muted small' }, d.sourceId ? `Linked to “${(p.documents.find((x) => x.id === d.sourceId) || {}).name || 'a deleted script'}”. Update to pull in new scenes and who is in them; your own moments, groups and events are kept.` : 'Build moments from the scenes of a script, or draw everything by hand.'),
+        h('button', { class: 'btn small', onclick: (e) => storyBuildMenu(e.currentTarget, d, ui.full) }, d.sourceId ? 'Update from script…' : 'Build from a script…')),
+      sec(h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.showAbsent, onchange: (e) => { s.showAbsent = e.target.checked; ui.changed(); } }), ' Show characters when they are off-screen (thin dashed line)'),
+        h('label', { class: 'lbl' }, 'Moment width'),
+        h('input', { type: 'range', min: 90, max: 280, step: 10, value: s.colWidth, oninput: (e) => { s.colWidth = +e.target.value; ui.changed(); } })),
+    ];
+  }
+
+  function storylineSVGForExport(d) {
+    const { svg } = SD.renderStorylineSVG(state.project, d, { forExport: true });
+    return svg.replace(/^<svg([^>]*)>/, `<svg$1><style>${SD.STORY_SVG_STYLE}</style>`);
+  }
+
+  function printStoryline(d) {
+    const root = $('#print-root');
+    root.className = 'print-story';
+    const wrapEl = h('div', { class: 'print-story-svg' });
+    wrapEl.innerHTML = storylineSVGForExport(d);
+    const svgEl = wrapEl.querySelector('svg');
+    svgEl.removeAttribute('width'); svgEl.removeAttribute('height');
+    root.replaceChildren(h('h1', {}, (state.project.title || '') + ' — ' + d.name), wrapEl);
+    const pageStyle = $('#page-size-style');
+    const before = pageStyle.textContent;
+    pageStyle.textContent = `@page { size: ${state.project.settings.pageSize === 'a4' ? 'A4' : 'letter'} landscape; margin: 0.5in; }`;
+    window.addEventListener('afterprint', () => { pageStyle.textContent = before; }, { once: true });
+    window.print();
+  }
+
   // ---------- Notes ----------
   function renderNote(root, d) {
     const ta = h('textarea', {
@@ -801,78 +1108,485 @@
   }
 
   // ---------- Master catalog ----------
+  const catalogById = (id) => state.project.catalog.find((c) => c.id === id) || null;
+
+  // Open the catalog on one item (or create it when missing).
+  function openCatalogItem(id, create) {
+    syncEditor();
+    let item = id ? catalogById(id) : null;
+    if (!item && create) {
+      item = SD.findCatalogItem(state.project, create.category, create.name);
+      if (!item) {
+        item = SD.newCatalogItem(create.category, create.name);
+        state.project.catalog.push(item);
+        markDirty();
+      }
+    }
+    if (!item) return;
+    state.catalogSel = item.id;
+    state.catalogFilter = 'all';
+    state.catalogSearch = '';
+    state.docId = '__catalog';
+    document.body.classList.remove('show-sidebar', 'show-inspector');
+    renderDocList();
+    renderView();
+  }
+
+  function itemSubtitle(c) {
+    const actorOf = (ch) => catalogById(ch.links.playedBy);
+    if (c.category === 'character') { const a = actorOf(c); return [c.fields.function, a ? 'played by ' + a.name : ''].filter(Boolean).join(' · '); }
+    if (c.category === 'actor') {
+      const roles = state.project.catalog.filter((x) => x.category === 'character' && x.links.playedBy === c.id).map((x) => x.name);
+      return roles.length ? 'plays ' + roles.join(', ') : 'no role yet';
+    }
+    const users = SD.linkIds(c, 'usedBy').map(catalogById).filter(Boolean).map((x) => x.name);
+    if (users.length) return users.join(', ');
+    return (c.description || '').split('\n')[0];
+  }
+
+  function avatarNode(c, cls = 'avatar') {
+    const cat = SD.categoryById(c.category);
+    if (c.media && c.media[0]) return h('img', { class: cls, src: c.media[0].data, alt: '' });
+    return h('span', { class: cls + ' initial', style: `--chip:${cat.color}` }, (c.name.trim()[0] || '?').toUpperCase());
+  }
+
   function renderCatalog(root) {
     const p = state.project;
-    const usage = SD.catalogUsage(p);
-    const filter = state.catalogFilter;
-    const counts = {};
-    p.catalog.forEach((c) => { counts[c.category] = (counts[c.category] || 0) + 1; });
-    const visible = p.catalog.filter((c) => filter === 'all' || c.category === filter).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+    const wrap = h('div', { class: 'catalog' });
+    const listPane = h('div', { class: 'cat-list-pane' });
+    const detailPane = h('div', { class: 'cat-detail-pane' });
+    wrap.append(listPane, detailPane);
+    root.append(wrap);
+    if (state.catalogSel && !catalogById(state.catalogSel)) state.catalogSel = null;
 
-    const addItem = () => {
-      const item = { id: SD.uid(), category: filter === 'all' ? 'character' : filter, name: '', description: '' };
-      p.catalog.push(item);
-      markDirty();
-      renderView();
-      renderDocList();
-      setTimeout(() => document.querySelector(`[data-item="${item.id}"] input`)?.focus(), 0);
+    const renderList = () => {
+      const q = (state.catalogSearch || '').trim().toLowerCase();
+      const filter = state.catalogFilter;
+      const counts = {};
+      p.catalog.forEach((c) => { counts[c.category] = (counts[c.category] || 0) + 1; });
+      const match = (c) => (filter === 'all' || c.category === filter) &&
+        (!q || [c.name, c.description, c.tags, ...Object.values(c.fields)].join(' ').toLowerCase().includes(q));
+      const groups = SD.CATEGORIES.map((cat) => ({ cat, items: p.catalog.filter((c) => c.category === cat.id && match(c)).sort((a, b) => a.name.localeCompare(b.name)) }))
+        .filter((g) => g.items.length);
+
+      const search = h('input', {
+        class: 'input', type: 'search', placeholder: 'Search names, tags, notes…', value: state.catalogSearch || '',
+        oninput: (e) => { state.catalogSearch = e.target.value; renderListBody(); },
+      });
+      const filterSel = h('select', { class: 'select', onchange: (e) => { state.catalogFilter = e.target.value; renderList(); } },
+        h('option', { value: 'all' }, `All categories (${p.catalog.length})`),
+        SD.CATEGORIES.map((c) => h('option', { value: c.id, selected: c.id === filter }, `${c.label}${counts[c.id] ? ' (' + counts[c.id] + ')' : ''}`)));
+      const body = h('div', { class: 'cat-list' });
+      const renderListBody = () => {
+        const q2 = (state.catalogSearch || '').trim().toLowerCase();
+        const m2 = (c) => (state.catalogFilter === 'all' || c.category === state.catalogFilter) &&
+          (!q2 || [c.name, c.description, c.tags, ...Object.values(c.fields)].join(' ').toLowerCase().includes(q2));
+        const gs = SD.CATEGORIES.map((cat) => ({ cat, items: p.catalog.filter((c) => c.category === cat.id && m2(c)).sort((a, b) => a.name.localeCompare(b.name)) })).filter((g) => g.items.length);
+        body.replaceChildren(...(gs.length ? gs.map(({ cat, items }) => h('div', { class: 'cat-group' },
+          h('div', { class: 'cat-group-head', style: `--chip:${cat.color}` }, h('span', { class: 'dot' }), cat.label, h('span', { class: 'count' }, items.length)),
+          items.map((c) => h('button', {
+            class: 'cat-row-item' + (c.id === state.catalogSel ? ' active' : ''), dataset: { id: c.id },
+            onclick: () => { state.catalogSel = c.id; renderList(); renderDetail(); },
+          }, avatarNode(c), h('span', { class: 'cat-row-text' }, h('span', { class: 'cat-row-name' }, c.name || h('em', {}, 'Unnamed')), h('span', { class: 'cat-row-sub' }, itemSubtitle(c))))))) : [
+          h('div', { class: 'empty-state small' }, p.catalog.length ? 'Nothing matches.' : 'Your catalog is empty. Add characters, actors, locations and props — or import them from your scripts.'),
+        ]));
+      };
+      void groups;
+      renderListBody();
+      listPane.replaceChildren(
+        h('div', { class: 'cat-list-head' },
+          h('div', { class: 'cat-list-title' }, h('h2', {}, 'Master Catalog'),
+            h('button', { class: 'btn primary small', onclick: (e) => addMenu(e.currentTarget) }, '+ Add')),
+          search, filterSel,
+          h('button', { class: 'btn ghost small', onclick: scanScripts, title: 'Find character names and locations in your scripts' }, 'Import characters & locations from scripts')),
+        body);
+      renderList.body = renderListBody;
     };
 
-    const scan = () => {
+    const addMenu = (anchor) => {
+      const groupsOrder = [...new Set(SD.CATEGORIES.map((c) => c.group))];
+      const items = [];
+      groupsOrder.forEach((g, i) => {
+        if (i) items.push('-');
+        SD.CATEGORIES.filter((c) => c.group === g).forEach((c) => items.push({ label: c.one, run: () => addItem(c.id) }));
+      });
+      popupMenu(anchor, items);
+    };
+    const addItem = (category) => {
+      const item = SD.newCatalogItem(category, '');
+      p.catalog.push(item);
+      state.catalogSel = item.id;
+      if (state.catalogFilter !== 'all' && state.catalogFilter !== category) state.catalogFilter = category;
+      markDirty();
+      renderList();
+      renderDetail();
+      renderDocList();
+      setTimeout(() => detailPane.querySelector('.item-name')?.focus(), 0);
+    };
+
+    const scanScripts = () => {
       let added = 0;
-      const has = (cat, n) => p.catalog.some((c) => c.category === cat && c.name.trim().toUpperCase() === n);
       for (const d of p.documents) {
         if (d.kind !== 'script') continue;
         for (const e of d.elements) {
-          if (e.type === 'character') { const n = SD.charName(e.text); if (n && !has('character', n)) { p.catalog.push({ id: SD.uid(), category: 'character', name: n, description: '' }); added++; } }
-          if (e.type === 'scene' && d.scriptType !== 'comic') { const l = SD.parseSceneHeading(e.text).location; if (l && !has('location', l)) { p.catalog.push({ id: SD.uid(), category: 'location', name: l, description: '' }); added++; } }
+          if (e.type === 'character') { const n = SD.charName(e.text); if (n && !SD.findCatalogItem(p, 'character', n)) { p.catalog.push(SD.newCatalogItem('character', n)); added++; } }
+          if (e.type === 'scene' && d.scriptType !== 'comic') { const l = SD.parseSceneHeading(e.text).location; if (l && !SD.findCatalogItem(p, 'location', l)) { p.catalog.push(SD.newCatalogItem('location', l)); added++; } }
         }
       }
       if (added) markDirty();
       toast(added ? `Added ${added} new item${added > 1 ? 's' : ''} from your scripts.` : 'Everything in your scripts is already in the catalog.');
-      renderView();
+      renderList();
       renderDocList();
     };
 
-    const card = (c) => {
-      const used = usage.get(c.id) || [];
-      const byDoc = new Map();
-      for (const u of used) { if (!byDoc.has(u.doc)) byDoc.set(u.doc, []); byDoc.get(u.doc).push(u.scene.number); }
-      const cat = SD.categoryById(c.category);
-      return h('div', { class: 'cat-card', dataset: { item: c.id }, style: `--chip:${cat.color}` },
-        h('div', { class: 'cat-row' },
-          h('input', { class: 'cat-name', value: c.name, placeholder: 'Name', oninput: (e) => { c.name = e.target.value; markDirty(); } }),
-          h('select', { class: 'select small', onchange: (e) => { c.category = e.target.value; markDirty(); renderView(); } },
-            SD.CATEGORIES.map((k) => h('option', { value: k.id, selected: k.id === c.category }, k.one))),
-          h('button', {
-            class: 'icon-btn', title: 'Delete item', 'aria-label': 'Delete ' + c.name,
-            onclick: async () => {
-              const ok = await modal({ title: 'Delete “' + (c.name || 'item') + '”?', body: 'It will also be removed from every scene breakdown.', buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, primary: true, danger: true }] });
-              if (!ok) return;
-              p.catalog.splice(p.catalog.indexOf(c), 1);
-              for (const d of p.documents) if (d.elements) for (const e of d.elements) if (e.items) e.items = e.items.filter((x) => x !== c.id);
-              markDirty(); renderView(); renderDocList();
-            },
-          }, '×')),
-        h('textarea', { class: 'input cat-desc', rows: 3, placeholder: c.category === 'character' ? 'Description, age, look, backstory…' : 'Description…', value: c.description || '', oninput: (e) => { c.description = e.target.value; markDirty(); } }),
-        h('div', { class: 'cat-usage muted small' },
-          used.length ? [...byDoc.entries()].map(([d, nums]) => `${d.name}: scene${nums.length > 1 ? 's' : ''} ${nums.join(', ')}`).join(' · ') : 'Not used in any scene yet'));
+    const renderDetail = () => {
+      const c = catalogById(state.catalogSel);
+      if (!c) {
+        detailPane.replaceChildren(h('div', { class: 'empty-state' },
+          h('div', { class: 'empty-icon' }, '🗂️'),
+          h('p', {}, 'Pick an item on the left, or add a new one.'),
+          h('p', { class: 'muted small' }, 'Tip: link a Character to an Actor with “Played by”, then print an Actor pack so the actor sees exactly who their character is.')));
+        return;
+      }
+      detailPane.replaceChildren(itemDetail(c, {
+        onRename: () => renderList.body(),
+        onStructure: () => { renderList(); renderDetail(); renderDocList(); },
+        onDelete: () => { state.catalogSel = null; renderList(); renderDetail(); renderDocList(); },
+      }));
+      detailPane.scrollTop = 0;
     };
 
-    root.append(h('div', { class: 'view-pad' },
-      h('div', { class: 'view-head' },
-        h('h2', {}, 'Master Catalog'),
-        h('p', { class: 'muted' }, 'Everything your stories need: characters, locations, props and more. Shared by all scripts in this project.'),
-        h('div', { class: 'row-gap' },
-          h('button', { class: 'btn primary', onclick: addItem }, '+ Add item'),
-          h('button', { class: 'btn', onclick: scan, title: 'Find character names and locations in your scripts' }, 'Import characters & locations from scripts'))),
-      h('div', { class: 'subtabs wrap' },
-        h('button', { class: 'tab' + (filter === 'all' ? ' active' : ''), onclick: () => { state.catalogFilter = 'all'; renderView(); } }, `All ${p.catalog.length}`),
-        SD.CATEGORIES.filter((c) => counts[c.id] || c.id === filter || ['character', 'location', 'prop'].includes(c.id)).map((c) => h('button', {
-          class: 'tab' + (filter === c.id ? ' active' : ''), style: `--chip:${c.color}`,
-          onclick: () => { state.catalogFilter = c.id; renderView(); },
-        }, h('span', { class: 'dot' }), `${c.label} ${counts[c.id] || 0}`))),
-      visible.length ? h('div', { class: 'cat-grid' }, visible.map(card)) : h('div', { class: 'empty-state' }, h('p', {}, 'No items here yet.'))));
+    renderList();
+    renderDetail();
+  }
+
+  function autoGrow(ta) {
+    const fit = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, 600) + 'px'; };
+    ta.addEventListener('input', fit);
+    requestAnimationFrame(fit);
+    return ta;
+  }
+
+  function itemDetail(c, cb) {
+    const p = state.project;
+    const cat = SD.categoryById(c.category);
+    const changed = () => markDirty();
+
+    // ----- one field -----
+    const fieldNode = (f) => {
+      const id = 'f-' + c.id + '-' + f.key;
+      let control;
+      if (f.type === 'link') control = linkControl(c, f, cb);
+      else if (f.type === 'select') {
+        control = h('select', { class: 'select', id, onchange: (e) => { if (e.target.value) c.fields[f.key] = e.target.value; else delete c.fields[f.key]; changed(); cb.onRename(); } },
+          h('option', { value: '' }, '—'), f.options.map((o) => h('option', { value: o, selected: c.fields[f.key] === o }, o)));
+        if (c.fields[f.key] && !f.options.includes(c.fields[f.key])) control.append(h('option', { value: c.fields[f.key], selected: true }, c.fields[f.key]));
+      } else if (f.type === 'textarea') {
+        control = autoGrow(h('textarea', { class: 'input', id, rows: 2, value: c.fields[f.key] || '', oninput: (e) => { c.fields[f.key] = e.target.value; changed(); } }));
+      } else {
+        control = h('input', { class: 'input', id, type: f.type === 'email' ? 'email' : 'text', value: c.fields[f.key] || '', oninput: (e) => { c.fields[f.key] = e.target.value; changed(); } });
+      }
+      const extra = [];
+      if (f.map) extra.push(h('a', { class: 'small-link', href: '#', onclick: (e) => { e.preventDefault(); const a = (c.fields[f.key] || c.name).trim(); if (a) window.open('https://www.openstreetmap.org/search?query=' + encodeURIComponent(a), '_blank', 'noopener'); } }, 'Open in map ↗'));
+      if (f.type === 'url' && c.fields[f.key]) extra.push(h('a', { class: 'small-link', href: /^https?:/i.test(c.fields[f.key]) ? c.fields[f.key] : 'https://' + c.fields[f.key], target: '_blank', rel: 'noopener' }, 'Open link ↗'));
+      return h('div', { class: 'ffield' + (f.wide || f.type === 'link' && f.multi ? ' wide' : '') },
+        h('label', { class: 'lbl', for: id }, f.label), control,
+        f.help ? h('div', { class: 'help-text' }, f.help) : null, extra);
+    };
+
+    const filled = (sec) => sec.fields.filter((f) => (f.type === 'link' ? SD.linkIds(c, f.key).length : (c.fields[f.key] || '').trim())).length;
+    const sections = SD.formFor(c.category).map((sec, i) => {
+      const n = filled(sec);
+      const det = h('details', { class: 'fsection', open: i === 0 || n > 0 || state.openSections?.has(c.category + sec.title) },
+        h('summary', {}, sec.title, n ? h('span', { class: 'fcount' }, n + '/' + sec.fields.length) : null),
+        h('div', { class: 'fgrid' }, sec.fields.map(fieldNode)));
+      det.addEventListener('toggle', () => {
+        state.openSections = state.openSections || new Set();
+        if (det.open) state.openSections.add(c.category + sec.title); else state.openSections.delete(c.category + sec.title);
+      });
+      return det;
+    });
+
+    // ----- reverse links ("Plays", "Wardrobe", …) -----
+    const inverse = SD.inverseLinksTo(c.category).map(({ sourceCategory, field }) => {
+      const sources = p.catalog.filter((x) => x.category === sourceCategory);
+      const linked = sources.filter((x) => SD.linkIds(x, field.key).includes(c.id));
+      if (!linked.length && !['Plays', 'Wardrobe', 'Props'].includes(field.inverse)) return null;
+      const srcCat = SD.categoryById(sourceCategory);
+      const addSel = h('select', {
+        class: 'select small',
+        onchange: (e) => {
+          const v = e.target.value;
+          if (!v) return;
+          let src = v === '__new' ? null : catalogById(v);
+          if (!src) { src = SD.newCatalogItem(sourceCategory, ''); p.catalog.push(src); }
+          if (field.multi) src.links[field.key] = [...new Set([...SD.linkIds(src, field.key), c.id])];
+          else src.links[field.key] = c.id;
+          changed();
+          if (v === '__new') { state.catalogSel = src.id; }
+          cb.onStructure();
+        },
+      }, h('option', { value: '' }, `+ ${field.multi ? 'Add' : 'Assign'} ${srcCat.one.toLowerCase()}…`),
+      sources.filter((x) => !linked.includes(x)).map((x) => h('option', { value: x.id }, (x.name || 'Unnamed') + (!field.multi && x.links[field.key] ? ' (currently ' + (catalogById(x.links[field.key])?.name || '?') + ')' : ''))),
+      h('option', { value: '__new' }, `New ${srcCat.one.toLowerCase()}…`));
+      return h('div', { class: 'ffield wide' },
+        h('label', { class: 'lbl' }, field.inverse),
+        h('div', { class: 'link-list' },
+          linked.map((x) => linkChip(x, () => {
+            if (field.multi) x.links[field.key] = SD.linkIds(x, field.key).filter((id) => id !== c.id);
+            else delete x.links[field.key];
+            changed(); cb.onStructure();
+          })),
+          addSel));
+    }).filter(Boolean);
+
+    // ----- where it appears -----
+    const usage = (SD.catalogUsage(p).get(c.id) || []);
+    const byDoc = new Map();
+    for (const u of usage) { if (!byDoc.has(u.doc)) byDoc.set(u.doc, []); byDoc.get(u.doc).push(u.scene); }
+    let stats = null;
+    if (c.category === 'character') {
+      const n = c.name.trim().toUpperCase();
+      let speeches = 0, words = 0;
+      for (const d of p.documents) if (d.kind === 'script') { const s = characterStats(d).find((x) => x.name === n); if (s) { speeches += s.speeches; words += s.words; } }
+      if (speeches) stats = `${speeches} speeches · ${words.toLocaleString()} words of dialogue`;
+    }
+    const appears = h('details', { class: 'fsection', open: true },
+      h('summary', {}, 'Appears in', usage.length ? h('span', { class: 'fcount' }, usage.length + ' scene' + (usage.length > 1 ? 's' : '')) : null),
+      h('div', { class: 'fbody' },
+        stats ? h('p', { class: 'muted small' }, stats) : null,
+        usage.length ? [...byDoc.entries()].map(([d, scenes]) => h('div', { class: 'appears' },
+          h('div', { class: 'appears-doc' }, d.name),
+          scenes.map((s) => h('button', { class: 'appears-scene', onclick: () => { state.docId = d.id; state.view = 'script'; renderDocList(); renderView(); requestAnimationFrame(() => editor.goTo(s.id)); } },
+            h('span', { class: 'scene-num' }, s.number), (s.el.text || '').toUpperCase() || 'Untitled scene'))))
+          : h('p', { class: 'muted small' }, c.category === 'character' ? 'Not in any scene yet. Scenes are found from the character name in your scripts.' : c.category === 'location' ? 'Not in any scene heading yet.' : 'Not tagged in any scene yet. Tag it from the scene panel next to the script.')));
+
+    // ----- photos & media -----
+    const fileIn = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: async (e) => {
+      const files = [...e.target.files];
+      e.target.value = '';
+      for (const f of files) {
+        try { c.media.push({ id: SD.uid(), name: f.name, data: await SD.imageToDataUrl(f) }); } catch (err) { toast('Could not read ' + f.name); }
+      }
+      changed(); cb.onStructure();
+    } });
+    const media = h('details', { class: 'fsection', open: true },
+      h('summary', {}, 'Photos & media', c.media.length ? h('span', { class: 'fcount' }, c.media.length) : null),
+      h('div', { class: 'fbody' },
+        h('div', { class: 'gallery' },
+          c.media.map((m, i) => h('div', { class: 'thumb' },
+            h('img', { src: m.data, alt: m.name || '', onclick: () => modal({ title: m.name || c.name, wide: true, body: h('img', { class: 'big-img', src: m.data, alt: '' }), buttons: [{ label: 'Close', value: true, primary: true }] }) }),
+            h('div', { class: 'thumb-actions' },
+              i ? h('button', { class: 'icon-btn', title: 'Make main photo', 'aria-label': 'Make main photo', onclick: () => { c.media.splice(i, 1); c.media.unshift(m); changed(); cb.onStructure(); } }, '★') : h('span', { class: 'thumb-main' }, 'Main'),
+              h('button', { class: 'icon-btn', title: 'Remove photo', 'aria-label': 'Remove photo', onclick: () => { c.media.splice(i, 1); changed(); cb.onStructure(); } }, '×')))),
+          h('button', { class: 'thumb add', onclick: () => fileIn.click() }, '+ Add photo')),
+        fileIn,
+        h('p', { class: 'muted small' }, 'Photos are shrunk and stored inside the project file.')));
+
+    // ----- custom fields -----
+    const customList = h('div', { class: 'fgrid' });
+    const renderCustom = () => customList.replaceChildren(...c.custom.map((cf, i) => h('div', { class: 'ffield wide custom-field' },
+      h('div', { class: 'custom-head' },
+        h('input', { class: 'lbl-input', value: cf.label, placeholder: 'Field name', oninput: (e) => { cf.label = e.target.value; changed(); } }),
+        h('button', { class: 'icon-btn', title: 'Remove field', 'aria-label': 'Remove field', onclick: () => { c.custom.splice(i, 1); changed(); renderCustom(); } }, '×')),
+      autoGrow(h('textarea', { class: 'input', rows: 1, value: cf.value, oninput: (e) => { cf.value = e.target.value; changed(); } })))));
+    renderCustom();
+    const custom = h('details', { class: 'fsection', open: c.custom.length > 0 },
+      h('summary', {}, 'Your own fields', c.custom.length ? h('span', { class: 'fcount' }, c.custom.length) : null),
+      h('div', { class: 'fbody' }, customList,
+        h('button', { class: 'btn ghost small', onclick: () => { c.custom.push({ label: '', value: '' }); changed(); renderCustom(); customList.querySelector('.custom-field:last-child .lbl-input')?.focus(); } }, '+ Add a field')));
+
+    // ----- header -----
+    const avatar = h('button', { class: 'item-avatar', title: c.media.length ? 'Photos' : 'Add a photo', onclick: () => fileIn.click() }, avatarNode(c, 'avatar big'));
+    const catSel = h('select', { class: 'select small', title: 'Category', onchange: (e) => { c.category = e.target.value; changed(); cb.onStructure(); } },
+      SD.CATEGORIES.map((k) => h('option', { value: k.id, selected: k.id === c.category }, k.one)));
+    const actions = [];
+    if (c.category === 'character') actions.push(h('button', { class: 'btn small', onclick: () => printSheets('character', c) }, '🖨 Character sheet'));
+    if (c.category === 'actor') actions.push(h('button', { class: 'btn small', onclick: () => printSheets('actor', c) }, '🖨 Actor pack'));
+    actions.push(h('button', {
+      class: 'btn ghost small danger', onclick: async () => {
+        const ok = await modal({ title: 'Delete “' + (c.name || 'item') + '”?', body: 'It is also removed from scene breakdowns and from any links to other items.', buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, primary: true, danger: true }] });
+        if (!ok) return;
+        p.catalog.splice(p.catalog.indexOf(c), 1);
+        SD.unlinkEverywhere(p, c.id);
+        changed(); cb.onDelete();
+      },
+    }, 'Delete'));
+
+    return h('div', { class: 'item-detail', style: `--chip:${cat.color}` },
+      h('div', { class: 'item-head' },
+        avatar,
+        h('div', { class: 'item-head-main' },
+          h('div', { class: 'item-kicker' }, h('span', { class: 'dot' }), catSel),
+          h('input', { class: 'item-name', value: c.name, placeholder: cat.one + ' name', oninput: (e) => { c.name = e.target.value; changed(); cb.onRename(); } }),
+          h('div', { class: 'item-actions' }, actions))),
+      h('div', { class: 'fsection plain' },
+        h('label', { class: 'lbl' }, 'Description'),
+        autoGrow(h('textarea', { class: 'input', rows: 3, placeholder: c.category === 'character' ? 'Who is this person, in a few lines?' : 'Description…', value: c.description, oninput: (e) => { c.description = e.target.value; changed(); } })),
+        h('label', { class: 'lbl' }, 'Tags'),
+        h('input', { class: 'input', placeholder: 'Searchable keywords', value: c.tags, oninput: (e) => { c.tags = e.target.value; changed(); } })),
+      inverse.length ? h('details', { class: 'fsection', open: true }, h('summary', {}, 'Linked'), h('div', { class: 'fgrid' }, inverse)) : null,
+      sections,
+      appears,
+      media,
+      custom);
+  }
+
+  function linkChip(x, onRemove) {
+    const cat = SD.categoryById(x.category);
+    return h('span', { class: 'chip link-chip', style: `--chip:${cat.color}` },
+      h('button', { class: 'chip-name', title: 'Open', onclick: () => openCatalogItem(x.id) }, avatarNode(x, 'avatar tiny'), x.name || 'Unnamed'),
+      onRemove ? h('button', { class: 'chip-x', title: 'Remove link', 'aria-label': 'Remove link to ' + x.name, onclick: onRemove }, '×') : null);
+  }
+
+  // A "link" field: pick one (or several) items of the target category.
+  function linkControl(c, f, cb) {
+    const p = state.project;
+    const target = SD.categoryById(f.target);
+    const ids = SD.linkIds(c, f.key);
+    const linked = ids.map(catalogById).filter(Boolean);
+    const sel = h('select', {
+      class: 'select small',
+      onchange: (e) => {
+        const v = e.target.value;
+        if (!v) return;
+        let t = v === '__new' ? null : catalogById(v);
+        if (!t) { t = SD.newCatalogItem(f.target, ''); p.catalog.push(t); }
+        if (f.multi) c.links[f.key] = [...new Set([...ids, t.id])];
+        else c.links[f.key] = t.id;
+        markDirty();
+        if (v === '__new') state.catalogSel = t.id;
+        cb.onStructure();
+      },
+    }, h('option', { value: '' }, linked.length && !f.multi ? 'Change…' : `+ Choose ${target.one.toLowerCase()}…`),
+    p.catalog.filter((x) => x.category === f.target && !ids.includes(x.id)).sort((a, b) => a.name.localeCompare(b.name)).map((x) => h('option', { value: x.id }, x.name || 'Unnamed')),
+    h('option', { value: '__new' }, `New ${target.one.toLowerCase()}…`));
+    return h('div', { class: 'link-list' },
+      linked.map((x) => linkChip(x, () => {
+        if (f.multi) c.links[f.key] = ids.filter((id) => id !== x.id);
+        else delete c.links[f.key];
+        markDirty(); cb.onStructure();
+      })),
+      sel);
+  }
+
+  // ---------- Character sheets & actor packs (printable) ----------
+  function sheetFields(c) {
+    const out = [];
+    for (const sec of SD.formFor(c.category)) {
+      const rows = [];
+      for (const f of sec.fields) {
+        if (f.type === 'link') {
+          const names = SD.linkIds(c, f.key).map(catalogById).filter(Boolean).map((x) => x.name);
+          if (names.length) rows.push([f.label, names.join(', ')]);
+        } else if ((c.fields[f.key] || '').trim()) rows.push([f.label, c.fields[f.key]]);
+      }
+      if (rows.length) out.push([sec.title, rows]);
+    }
+    const custom = c.custom.filter((x) => (x.value || '').trim()).map((x) => [x.label || 'Note', x.value]);
+    if (custom.length) out.push(['More', custom]);
+    return out;
+  }
+
+  function characterScenes(name) {
+    const n = name.trim().toUpperCase();
+    const res = [];
+    for (const d of state.project.documents) {
+      if (d.kind !== 'script') continue;
+      for (const s of SD.getScenes(d)) if (SD.sceneCharacters(d, s).includes(n)) res.push({ doc: d, scene: s });
+    }
+    return res;
+  }
+
+  function sheetNode(c, opts) {
+    const p = state.project;
+    const cat = SD.categoryById(c.category);
+    const kv = (rows) => h('dl', { class: 'sheet-kv' }, rows.map(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]));
+    const parts = [];
+    const sub = [];
+    if (c.category === 'character') {
+      if (c.fields.fullName) sub.push(c.fields.fullName);
+      const actor = catalogById(c.links.playedBy);
+      if (actor) sub.push('played by ' + actor.name);
+    }
+    parts.push(h('header', { class: 'sheet-head' },
+      c.media[0] ? h('img', { class: 'sheet-photo', src: c.media[0].data, alt: '' }) : null,
+      h('div', {},
+        h('div', { class: 'sheet-kicker' }, cat.one + ' · ' + (p.title || '')),
+        h('h1', {}, c.name || 'Unnamed'),
+        sub.length ? h('div', { class: 'sheet-sub' }, sub.join(' — ')) : null)));
+    if (c.description) parts.push(h('p', { class: 'sheet-desc' }, c.description));
+    for (const [title, rows] of sheetFields(c)) {
+      if (opts.private === false && /contact|wardrobe sizes|availability/i.test(title)) continue;
+      parts.push(h('section', { class: 'sheet-sec' }, h('h2', {}, title), kv(rows)));
+    }
+    if (c.category === 'character' && opts.scenes) {
+      const sc = characterScenes(c.name);
+      if (sc.length) {
+        parts.push(h('section', { class: 'sheet-sec' }, h('h2', {}, `Scenes (${sc.length})`),
+          h('table', { class: 'sheet-scenes' }, sc.map(({ doc, scene }) => h('tr', {},
+            h('td', {}, scene.number), h('td', { class: 'mono' }, (scene.el.text || '').toUpperCase()), h('td', {}, SD.eighths(scene.lines) + ' pg'),
+            h('td', {}, scene.el.synopsis || ''), p.documents.filter((x) => x.kind === 'script').length > 1 ? h('td', { class: 'muted' }, doc.name) : null)))));
+      }
+      const wardrobe = p.catalog.filter((x) => x.category !== 'character' && SD.linkIds(x, 'usedBy').includes(c.id));
+      if (wardrobe.length) {
+        parts.push(h('section', { class: 'sheet-sec' }, h('h2', {}, 'Wardrobe, props & more'),
+          kv(wardrobe.map((x) => [SD.categoryById(x.category).one, x.name + (x.description ? ' — ' + x.description : '')]))));
+      }
+    }
+    return h('article', { class: 'sheet' }, parts);
+  }
+
+  function sidesNode(c) {
+    const n = c.name.trim().toUpperCase();
+    const out = [];
+    for (const { doc, scene } of characterScenes(c.name)) {
+      const body = h('div', { class: scriptTextClasses() });
+      body.dataset.scriptType = doc.scriptType;
+      let mine = false;
+      for (let i = scene.start; i < scene.end; i++) {
+        const e = doc.elements[i];
+        if (e.type === 'character') mine = SD.charName(e.text) === n;
+        else if (!['dialogue', 'parenthetical'].includes(e.type)) mine = false;
+        const div = h('div', { class: 'el' + (mine ? ' mine' : '') + (e.text ? '' : ' is-empty') }, e.text || ' ');
+        div.dataset.type = e.type;
+        body.append(div);
+      }
+      out.push(h('section', { class: 'sides' }, h('div', { class: 'sides-label' }, `${doc.name} — scene ${scene.number}`), body));
+    }
+    return out;
+  }
+
+  async function printSheets(kind, item) {
+    syncEditor();
+    const chars = kind === 'actor'
+      ? state.project.catalog.filter((x) => x.category === 'character' && x.links.playedBy === item.id)
+      : [item];
+    const cScenes = h('input', { type: 'checkbox', checked: true });
+    const cSides = h('input', { type: 'checkbox', checked: kind === 'actor' });
+    const cPrivate = h('input', { type: 'checkbox', checked: false });
+    const body = h('div', {},
+      h('p', {}, kind === 'actor'
+        ? (chars.length ? `A pack for ${item.name || 'this actor'} with the profile of ${chars.map((x) => x.name).join(', ')}.` : 'This actor has no role yet. Link a character with “Played by” first — the pack will only contain the actor page.')
+        : `A printable profile of ${item.name || 'this character'}.`),
+      h('label', { class: 'check' }, cScenes, ' List the scenes the character is in'),
+      h('label', { class: 'check' }, cSides, ' Include sides — the full text of those scenes, with the character\'s lines marked'),
+      kind === 'actor' ? h('label', { class: 'check' }, cPrivate, ' Include the actor\'s own contact, sizes and availability') : null);
+    const ok = await modal({ title: kind === 'actor' ? 'Print actor pack' : 'Print character sheet', body, buttons: [{ label: 'Cancel', value: false }, { label: 'Print / PDF', value: true, primary: true }] });
+    if (!ok) return;
+    const root = $('#print-root');
+    root.className = 'print-sheets';
+    root.replaceChildren();
+    if (kind === 'actor') root.append(sheetNode(item, { private: cPrivate.checked }));
+    for (const ch of chars) {
+      root.append(sheetNode(ch, { scenes: cScenes.checked }));
+      if (cSides.checked) {
+        const sides = sidesNode(ch);
+        if (sides.length) root.append(h('div', { class: 'sides-wrap' }, h('h2', { class: 'sides-title' }, 'Sides — ' + ch.name), sides));
+      }
+    }
+    document.title = safeName((item.name || 'Sheet') + (kind === 'actor' ? ' - actor pack' : ' - character sheet'));
+    window.print();
   }
 
   // =====================================================================
@@ -883,6 +1597,11 @@
     const d = currentDoc();
     if (!d || isCatalog()) { bar.textContent = isCatalog() ? `${state.project.catalog.length} catalog items` : ''; return; }
     if (d.kind === 'note') { bar.textContent = `Notes · ${((d.text || '').match(/\S+/g) || []).length.toLocaleString()} words`; return; }
+    if (d.kind === 'storyline') {
+      const evs = d.beats.reduce((n, b) => n + b.events.length, 0);
+      bar.textContent = `Storyline  ·  ${d.rows.length} characters  ·  ${d.beats.length} moments  ·  ${evs} events`;
+      return;
+    }
     const est = SD.estimate(d);
     const scenes = d.elements.filter((e) => e.type === SD.SCRIPT_TYPES[d.scriptType].sceneType).length;
     const parts = [SD.SCRIPT_TYPES[d.scriptType].label];
@@ -996,7 +1715,7 @@
       if (ext === '.celtx') {
         toast('Reading Celtx project…');
         const res = await SD.Celtx.import(file);
-        await importDocs(res.documents, res.title);
+        await importDocs(res.documents, res.title, res.catalog);
       } else if (['.fountain', '.spmd', '.txt'].includes(ext)) {
         const parsed = SD.Fountain.parse(await file.text());
         const d = SD.newScript('screenplay', base);
@@ -1025,14 +1744,14 @@
 
   function projectHasContent() {
     const p = state.project;
-    return p.catalog.length > 0 || p.documents.some((d) => (d.kind === 'note' ? d.text.trim() : d.elements.some((e) => e.text.trim())));
+    return p.catalog.length > 0 || p.documents.some((d) => (d.kind === 'note' ? d.text.trim() : d.kind === 'storyline' ? d.beats.length : d.elements.some((e) => e.text.trim())));
   }
 
-  async function importDocs(docs, title) {
+  async function importDocs(docs, title, catalog = []) {
     let mode = 'new';
     if (projectHasContent()) {
       mode = await modal({
-        title: 'Import ' + (docs.length > 1 ? docs.length + ' documents' : '“' + docs[0].name + '”'),
+        title: 'Import ' + (docs.length !== 1 ? docs.length + ' documents' : '“' + docs[0].name + '”') + (catalog.length ? ' and ' + catalog.length + ' catalog items' : ''),
         body: 'Add to the project you have open, or start a new project with it?',
         buttons: [{ label: 'Cancel', value: null }, { label: 'New project', value: 'new' }, { label: 'Add to this project', value: 'add', primary: true }],
       });
@@ -1042,17 +1761,29 @@
       if (projectHasContent() && !(await confirmDiscard('Start a new project anyway?'))) return;
       const p = SD.newProject();
       p.title = title || 'Imported Project';
-      p.documents = docs;
+      p.documents = docs.length ? docs : p.documents;
+      p.catalog = catalog;
       setProject(p);
       state.dirty = true;
       renderSaveState();
       autosave();
     } else {
       state.project.documents.push(...docs);
+      // merge catalog: reuse an existing item with the same category and name
+      const remap = new Map();
+      for (const c of catalog) {
+        const same = SD.findCatalogItem(state.project, c.category, c.name);
+        if (same) remap.set(c.id, same.id); else state.project.catalog.push(c);
+      }
+      if (remap.size) {
+        const fix = (id) => remap.get(id) || id;
+        for (const c of catalog) for (const k of Object.keys(c.links)) c.links[k] = Array.isArray(c.links[k]) ? c.links[k].map(fix) : fix(c.links[k]);
+        for (const d of docs) if (d.elements) for (const e of d.elements) if (e.items) e.items = e.items.map(fix);
+      }
       markDirty();
-      selectDoc(docs[0].id);
+      if (docs.length) selectDoc(docs[0].id); else selectDoc('__catalog');
     }
-    toast(`Imported ${docs.length} document${docs.length > 1 ? 's' : ''}.`);
+    toast(`Imported ${docs.length} document${docs.length !== 1 ? 's' : ''}` + (catalog.length ? ` and ${catalog.length} catalog items.` : '.'));
   }
 
   function scriptForExport() {
@@ -1235,10 +1966,16 @@
     const menu = h('div', { class: 'dropdown-menu floating open', role: 'menu' }, items.filter(Boolean).map((it) => it === '-'
       ? h('div', { class: 'menu-sep' })
       : h('button', { class: 'menu-item' + (it.danger ? ' danger' : ''), role: 'menuitem', onclick: () => { menu.remove(); it.run(); } }, it.label)));
-    document.body.append(menu);
-    const r = anchor.getBoundingClientRect();
-    menu.style.top = Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 8) + 'px';
-    menu.style.left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 8) + 'px';
+    // Open after the current click has finished bubbling, so the global
+    // "click outside closes menus" handler doesn't close it straight away.
+    setTimeout(() => {
+      document.body.append(menu);
+      const r = anchor.getBoundingClientRect();
+      menu.style.top = Math.max(8, Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 8)) + 'px';
+      menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+      menu.style.maxHeight = (window.innerHeight - 16) + 'px';
+      menu.style.overflowY = 'auto';
+    }, 0);
   }
 
   function closeMenus() {
@@ -1273,6 +2010,7 @@
       'add-audioplay': () => addDoc('audioplay'),
       'add-comic': () => addDoc('comic'),
       'add-note': () => addDoc('note'),
+      'add-storyline': () => addDoc('storyline'),
       'toggle-sidebar': () => document.body.classList.toggle('show-sidebar'),
     };
     document.addEventListener('click', (e) => {

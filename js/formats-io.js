@@ -190,14 +190,79 @@ ${tpLines.join('\n')}
   };
 
   // ======================= Old Celtx desktop (.celtx = zip) =======================
+  // A .celtx file is a zip holding project.rdf (documents, catalog, scene data),
+  // one HTML file per script / text document, and media files.
+
+  // HTML paragraph classes -> element types, per script kind
   const CELTX_CLASSES = {
     sceneheading: 'scene', action: 'action', character: 'character', dialog: 'dialogue', dialogue: 'dialogue',
     parenthetical: 'parenthetical', transition: 'transition', shot: 'shot', text: 'general', general: 'general',
-    act: 'scene', stagedirection: 'action', sound: 'sound', music: 'music', voice: 'character',
+    act: 'general', sound: 'sound', music: 'music', voice: 'character', caption: 'caption',
   };
+  const CELTX_CLASS_OVERRIDES = {
+    stageplay: { act: 'scene' },
+    comic: { sceneheading: 'page', shot: 'panel', sound: 'sfx' },
+  };
+  const CELTX_DOCTYPES = { ScriptDocument: 'screenplay', TheatreDocument: 'stageplay', RadioDocument: 'audioplay', ComicDocument: 'comic', AVDocument: 'screenplay' };
+  const CELTX_NOTE_DOCTYPES = new Set(['TextDocument', 'NovelDocument']);
+
+  // RDF item types -> catalog categories
+  const CELTX_TYPES = {
+    Cast: 'character', Actor: 'actor', Crew: 'crew', Location: 'location', Props: 'prop', Wardrobe: 'wardrobe',
+    Makeup: 'makeup', Hair: 'hair', Set: 'set', SetDressing: 'setdressing', Greenery: 'setdressing', Construction: 'set', Painting: 'set',
+    Vehicles: 'vehicle', Animals: 'animal', Livestock: 'animal', AnimalHandler: 'crew', AdditionalLabour: 'crew',
+    Weapons: 'weapon', SpecialEquipment: 'equipment', Electrics: 'equipment', Lights: 'equipment', Camera: 'equipment', Cameras: 'equipment',
+    SpecialFX: 'sfx', MechanicalFX: 'sfx', OpticalFX: 'vfx', CGI: 'vfx', VisualFX: 'vfx',
+    Sound: 'sound', SoundFX: 'sound', Music: 'music', Extras: 'extras', Stunts: 'stunts',
+    Misc: 'other', Miscellaneous: 'other', Security: 'other', ProductionNotes: 'other',
+  };
+  const CELTX_NOT_ITEMS = new Set(['Description', 'Seq', 'Bag', 'Alt', 'Image', 'Audio', 'Video', 'Document', 'DepartmentList', 'Folder', 'Project', 'SceneDetails', 'Scene', 'li']);
+
+  // Celtx form field names (after the "character-" style prefix) -> our field keys
+  const CELTX_FIELDS = {
+    'full-name': 'fullName', age: 'age', dist_feat: 'distFeatures', hair: 'hair', eyes: 'eyes', height: 'height', weight: 'weight',
+    traits: 'traits', princ_func: 'function', goal: 'goal', ach_goal: 'plan', fam_back: 'family', habits: 'habits',
+    education: 'education', person: 'personality', likes: 'likes', dislikes: 'dislikes', background: 'background',
+    startDate: 'startDate', endDate: 'endDate', 'contact-name': 'contactName', 'contact-email': 'email', 'contact-phone': 'phone',
+    'contact-cell': 'cell', 'contact-address': 'address', 'contact-comments': 'contactComments', dob: 'dob', sex: 'gender',
+    shirt: 'shirt', pants: 'pants', dress: 'dress', hat: 'hat', shoes: 'shoes', jacket: 'jacket',
+    address: 'address', 'dates-available': 'datesAvailable', 'square-footage': 'squareFootage', 'rental-cost': 'rentalCost',
+    elevator: 'elevator', 'power-capabilities': 'power', 'light-sources': 'lightSources', 'noise-sources': 'noise',
+    'washroom-locations': 'washrooms', 'parking-information': 'parking', 'facility-comments': 'facilityComments',
+    size: 'size', color: 'color', era: 'era', procure: 'procure', cost: 'cost', dateNeeded: 'dateNeeded', dateReturn: 'dateReturn',
+    comments: 'notes',
+  };
+  const CELTX_SKIP_FIELDS = new Set(['title', 'description', 'tags', 'scheduleID', 'media', 'actor', 'character', 'about', 'mapaddress']);
+  const CELTX_COLOURS = { red: '#e5484d', orange: '#f76b15', yellow: '#ffc53d', green: '#46a758', blue: '#0090ff', cyan: '#12a594', teal: '#12a594', purple: '#8e4ec6', violet: '#8e4ec6', pink: '#d6409f', magenta: '#d6409f', grey: '#8b8d98', gray: '#8b8d98' };
+
+  const titleCase = (s) => String(s).replace(/\b\w/g, (c) => c.toUpperCase());
+  const prettyKey = (k) => titleCase(k.replace(/[-_]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2'));
+
+  function fieldValue(key, v) {
+    if (key === 'function') {
+      const map = { confidante: 'Confidant(e)', bestfriend: 'Best friend', loveinterest: 'Love interest', comicrelief: 'Comic relief' };
+      return map[v.replace(/\s+/g, '').toLowerCase()] || titleCase(v);
+    }
+    if (key === 'elevator') return v === 'true' ? 'Yes' : v === 'false' ? 'No' : v;
+    if (key === 'procure') return v === 'own' ? 'Already own' : titleCase(v);
+    return v;
+  }
+
+  // Scene headings were often typed as "EXT.FOREST.DAY"
+  function tidyHeading(t) {
+    const m = t.match(/^(INT\.?\/EXT|EXT\.?\/INT|INT|EXT|I\/E|EST)\.\s*([^.]+?)\s*\.\s*([A-Z][A-Z ]*)$/i);
+    if (m) return m[1].toUpperCase() + '. ' + m[2].trim() + ' - ' + m[3].trim();
+    return t.replace(/^(INT|EXT|EST)\.(?=\S)/i, '$1. ');
+  }
+
+  function htmlToText(html) {
+    const prepared = String(html).replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|h\d|li|tr)>/gi, '\n$&');
+    const d = new DOMParser().parseFromString(prepared, 'text/html');
+    return (d.body ? d.body.textContent : '').replace(/\n{3,}/g, '\n\n').trim();
+  }
 
   let jszipPromise = null;
-  const loadJSZip = () => {
+  function loadJSZip() {
     if (window.JSZip) return Promise.resolve(window.JSZip);
     if (!jszipPromise) {
       jszipPromise = new Promise((resolve, reject) => {
@@ -209,6 +274,41 @@ ${tpLines.join('\n')}
       });
     }
     return jszipPromise;
+  }
+
+  // Minimal RDF/XML reader: each top-level node keeps its attributes and child values by local name.
+  function readRdf(xmlText) {
+    const x = new DOMParser().parseFromString(xmlText, 'application/xml');
+    const RDFNS = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+    const nodes = [];
+    const byAbout = new Map();
+    for (const e of x.documentElement.children) {
+      const n = { type: e.localName, about: '', attrs: {}, res: {}, text: {} };
+      for (const a of e.attributes) {
+        if (a.localName === 'about') n.about = a.value;
+        else if (!a.name.startsWith('xmlns')) n.attrs[a.localName] = a.value;
+      }
+      for (const c of e.children) {
+        const r = c.getAttributeNS(RDFNS, 'resource');
+        if (r) (n.res[c.localName] = n.res[c.localName] || []).push(r);
+        else n.text[c.localName] = c.textContent;
+      }
+      nodes.push(n);
+      if (!byAbout.has(n.about)) byAbout.set(n.about, []);
+      byAbout.get(n.about).push(n);
+    }
+    const seq = (about) => {
+      const n = (byAbout.get(about) || []).find((m) => m.type === 'Seq' || m.type === 'Bag' || m.type === 'Alt');
+      return n ? n.res.li || [] : [];
+    };
+    const get = (about, pred) => (byAbout.get(about) || []).find(pred || (() => true));
+    const val = (n, k) => (n.attrs[k] != null ? n.attrs[k] : n.text[k] != null ? n.text[k] : '');
+    return { nodes, seq, get, val };
+  }
+
+  const isBreakdownItem = (catalog, id) => {
+    const it = catalog.find((c) => c.id === id);
+    return !!it && it.category !== 'character' && it.category !== 'actor';
   };
 
   SD.Celtx = {
@@ -216,50 +316,148 @@ ${tpLines.join('\n')}
       const JSZip = await loadJSZip();
       const zip = await JSZip.loadAsync(file);
       const names = Object.keys(zip.files);
-      // project.rdf maps local files to document titles
-      const titles = {};
-      let projectTitle = '';
-      const rdfName = names.find((n) => /project\.rdf$/i.test(n));
-      if (rdfName) {
-        try {
-          const rdf = new DOMParser().parseFromString(await zip.file(rdfName).async('string'), 'application/xml');
-          for (const d of rdf.getElementsByTagName('*')) {
-            if (d.localName !== 'Description') continue;
-            let lf = '', title = '';
-            for (const c of d.children) {
-              if (c.localName === 'localFile') lf = c.textContent.trim();
-              if (c.localName === 'title') title = c.textContent.trim();
-            }
-            if (lf && title) titles[lf] = title;
-            else if (title && !projectTitle && !lf) projectTitle = title;
-          }
-        } catch (e) { /* titles are optional */ }
+      const rdfName = names.find((n) => /(^|\/)project\.rdf$/i.test(n));
+      if (!rdfName) throw new Error('This does not look like a Celtx project (project.rdf is missing).');
+      const { nodes, seq, get, val } = readRdf(await zip.file(rdfName).async('string'));
+      const zipFile = (name) => zip.file(name) || zip.file(names.find((n) => n.split('/').pop() === name) || '\u0000');
+
+      const projectNode = nodes.find((n) => n.type === 'Project');
+      const projectTitle = projectNode ? val(projectNode, 'title') : '';
+
+      // ---------- catalog ----------
+      const catalog = [];
+      const idByAbout = new Map();
+      const pending = [];
+      for (const n of nodes) {
+        if (CELTX_NOT_ITEMS.has(n.type) || !n.about) continue;
+        const category = CELTX_TYPES[n.type] || (val(n, 'title') ? 'other' : null);
+        if (!category) continue;
+        const item = SD.newCatalogItem(category, val(n, 'title').trim());
+        item.description = val(n, 'description');
+        item.tags = val(n, 'tags');
+        const formKeys = new Set(SD.formFor(category).flatMap((s) => s.fields.map((f) => f.key)));
+        for (const [k, v] of Object.entries(Object.assign({}, n.attrs, n.text))) {
+          if (!String(v).trim() || CELTX_SKIP_FIELDS.has(k)) continue;
+          const short = k.replace(/^(character|actor|location|prop|wardrobe|crew|scene|item|[a-z]+?)-/, '');
+          if (CELTX_SKIP_FIELDS.has(short)) continue;
+          const key = CELTX_FIELDS[short];
+          if (key && formKeys.has(key) && !item.fields[key]) item.fields[key] = fieldValue(key, String(v));
+          else item.custom.push({ label: prettyKey(short), value: String(v) });
+        }
+        if (!item.name) item.name = item.fields.fullName || 'Unnamed';
+        idByAbout.set(n.about, item.id);
+        catalog.push(item);
+        pending.push({ n, item });
       }
-      const docs = [];
-      for (const n of names) {
-        if (!/\.x?html?$/i.test(n) || zip.files[n].dir) continue;
-        const html = await zip.file(n).async('string');
-        const dom = new DOMParser().parseFromString(html, 'text/html');
-        const base = n.split('/').pop();
-        const ps = Array.from(dom.querySelectorAll('p[class]'));
-        const known = ps.filter((p) => CELTX_CLASSES[p.className.trim().toLowerCase()]);
-        const name = titles[base] || dom.title || base.replace(/\.x?html?$/i, '');
-        if (known.length) {
-          const doc = SD.newScript('screenplay', name);
-          doc.elements = ps.map((p) => {
-            const type = CELTX_CLASSES[p.className.trim().toLowerCase()] || 'action';
-            return el(type, p.textContent.replace(/\s+/g, ' ').trim());
-          });
-          if (/stage/i.test(name)) doc.scriptType = 'stageplay';
-          docs.push(doc);
-        } else {
-          const text = (dom.body ? dom.body.innerText || dom.body.textContent : '').trim();
-          if (text) { const note = SD.newNote(name); note.text = text; docs.push(note); }
+      // links and media need every item to exist first
+      for (const { n, item } of pending) {
+        const actor = (n.res.actor || [])[0];
+        if (actor && idByAbout.has(actor)) item.links.playedBy = idByAbout.get(actor);
+        const chars = (n.res.character || []).flatMap((r) => (seq(r).length ? seq(r) : [r])).map((r) => idByAbout.get(r)).filter(Boolean);
+        if (chars.length) item.links.usedBy = chars;
+        // some links were stored as plain character names ("Considered For: JACK")
+        const byName = (txt) => String(txt).split(/\s*[,;\n]\s*/).map((nm) => catalog.find((c) => c.category === 'character' && c.name.toUpperCase() === nm.trim().toUpperCase())).filter(Boolean);
+        item.custom = item.custom.filter((cf) => {
+          const key = { 'Considered For': 'consideredFor', 'Characters Used': 'usedBy' }[cf.label];
+          if (!key || !SD.formFor(item.category).some((sec) => sec.fields.some((f) => f.key === key))) return true;
+          const found = byName(cf.value);
+          if (!found.length) return true;
+          item.links[key] = [...new Set([...SD.linkIds(item, key), ...found.map((c) => c.id)])];
+          return false;
+        });
+        for (const m of n.res.media || []) {
+          const refs = seq(m).length ? seq(m) : [m];
+          for (const r of refs) {
+            const img = get(r, (x) => x.type === 'Image');
+            const local = img && val(img, 'localFile');
+            const zf = local && zipFile(local);
+            if (!zf) continue;
+            try {
+              const blob = await zf.async('blob');
+              item.media.push({ id: SD.uid(), name: val(img, 'title') || local, data: await SD.imageToDataUrl(blob) });
+            } catch (e) { /* skip unreadable media */ }
+          }
         }
       }
-      if (!docs.length) throw new Error('No scripts were found inside this .celtx file.');
-      docs.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'script' ? -1 : 1));
-      return { title: projectTitle || file.name.replace(/\.celtx$/i, ''), documents: docs };
+
+      // ---------- documents ----------
+      const documents = [];
+      for (const n of nodes) {
+        if (n.type !== 'Document') continue;
+        const dt = ((n.res.doctype || [])[0] || '').split('/').pop();
+        const local = val(n, 'localFile');
+        const zf = local && zipFile(local);
+        if (!zf) continue;
+        const name = val(n, 'title') || local.replace(/\.\w+$/, '');
+        const html = await zf.async('string');
+        if (CELTX_NOTE_DOCTYPES.has(dt)) {
+          const text = htmlToText(html);
+          if (text) { const note = SD.newNote(name); note.text = text; documents.push(note); }
+          continue;
+        }
+        const scriptType = CELTX_DOCTYPES[dt];
+        if (!scriptType) continue;
+        const doc = SD.newScript(scriptType, name);
+        const classes = Object.assign({}, CELTX_CLASSES, CELTX_CLASS_OVERRIDES[scriptType] || {});
+        const sceneType = SD.SCRIPT_TYPES[scriptType].sceneType;
+        const dom = new DOMParser().parseFromString(html, 'text/html');
+        const meta = (k) => { const m = dom.querySelector('meta[name="' + k + '"]'); return m ? m.getAttribute('content') || '' : ''; };
+        Object.assign(doc.titlePage, {
+          title: (dom.title || '').trim() || projectTitle,
+          author: meta('Author'),
+          source: meta('DC.source'),
+          contact: meta('CX.contact'),
+          credit: /^by$/i.test(meta('CX.byline')) || !meta('CX.byline') ? 'Written by' : meta('CX.byline'),
+        });
+
+        // scene data (synopsis, colour, breakdown), matched to headings in script order
+        const sceneData = (n.res.scenes || []).flatMap((r) => seq(r)).map((r) => get(r)).filter(Boolean);
+        const used = new Set();
+        const norm = (t) => String(t).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        let sceneIdx = 0;
+        let curScene = null;
+        const els = [];
+        for (const p of dom.querySelectorAll('body p')) {
+          const cls = (p.className || '').trim().toLowerCase();
+          const type = classes[cls] || 'action';
+          const notes = [...p.querySelectorAll('span.note')].map((s) => s.getAttribute('text')).filter(Boolean);
+          const tagged = [...p.querySelectorAll('span[ref]')].map((s) => idByAbout.get(s.getAttribute('ref'))).filter(Boolean);
+          p.querySelectorAll('span.note').forEach((s) => s.remove());
+          const raw = p.textContent.replace(/\s+/g, ' ').trim();
+          let text = raw;
+          if (type === 'scene') text = tidyHeading(raw);
+          if (type === 'page') text = raw.replace(/^\(\s*\d+\s+panels?\s*\)$/i, '');
+          const e = el(type, text);
+          if (type === sceneType) {
+            curScene = e;
+            let data = null;
+            const want = norm(raw);
+            for (let k = sceneIdx; k < sceneData.length; k++) {
+              if (!used.has(k) && norm(val(sceneData[k], 'title')) === want) { data = sceneData[k]; used.add(k); sceneIdx = k + 1; break; }
+            }
+            if (!data && cls === 'sceneheading' && sceneData[sceneIdx] && !used.has(sceneIdx)) { data = sceneData[sceneIdx]; used.add(sceneIdx); sceneIdx++; }
+            if (data) {
+              if (val(data, 'description')) e.synopsis = val(data, 'description');
+              const col = val(data, 'colour').toLowerCase();
+              const hex = CELTX_COLOURS[col] || (/^#[0-9a-f]{3,6}$/.test(col) ? col : '');
+              if (hex) e.color = hex;
+              const members = (data.res.members || []).flatMap((r) => seq(r)).map((r) => idByAbout.get(r)).filter((id) => id && isBreakdownItem(catalog, id));
+              if (members.length) e.items = [...new Set(members)];
+            }
+          }
+          if (curScene) {
+            const extra = tagged.filter((id) => isBreakdownItem(catalog, id));
+            if (extra.length) curScene.items = [...new Set([...(curScene.items || []), ...extra])];
+            if (notes.length) curScene.notes = [curScene.notes, ...notes].filter(Boolean).join('\n\n');
+          }
+          els.push(e);
+        }
+        if (els.length) doc.elements = els;
+        documents.push(doc);
+      }
+      if (!documents.length && !catalog.length) throw new Error('No scripts or catalog items were found inside this .celtx file.');
+      documents.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'script' ? -1 : 1));
+      return { title: projectTitle || file.name.replace(/\.celtx$/i, ''), documents, catalog };
     },
   };
 })();
