@@ -2255,12 +2255,15 @@
           h('div', { class: 'cat-group-head', style: `--chip:${cat.color}` }, h('span', { class: 'dot' }), cat.label, h('span', { class: 'count' }, items.length)),
           items.map((c) => h('button', {
             class: 'cat-row-item' + (c.id === state.catalogSel ? ' active' : ''), dataset: { id: c.id },
-            onclick: () => { state.catalogSel = c.id; renderList(); renderDetail(); },
+            // only move the highlight, so the list keeps its scroll position
+            onclick: () => { state.catalogSel = c.id; body.querySelectorAll('.cat-row-item.active').forEach((x) => x.classList.remove('active')); body.querySelector(`[data-id="${c.id}"]`)?.classList.add('active'); renderDetail(); },
           }, avatarNode(c), h('span', { class: 'cat-row-text' }, h('span', { class: 'cat-row-name' }, c.name || h('em', {}, 'Unnamed')), h('span', { class: 'cat-row-sub' }, itemSubtitle(c))))))) : [
           h('div', { class: 'empty-state small' }, p.catalog.length ? 'Nothing matches.' : 'Your catalog is empty. Add characters, actors, locations and props — or import them from your scripts.'),
         ]));
       };
       void groups;
+      const oldList = listPane.querySelector('.cat-list');
+      const keepScroll = oldList ? oldList.scrollTop : 0;
       renderListBody();
       listPane.replaceChildren(
         h('div', { class: 'cat-list-head' },
@@ -2269,6 +2272,7 @@
           search, filterSel,
           h('button', { class: 'btn ghost small', onclick: scanScripts, title: 'Find character names and locations in your scripts' }, 'Import characters & locations from scripts')),
         body);
+      body.scrollTop = keepScroll;
       renderList.body = renderListBody;
     };
 

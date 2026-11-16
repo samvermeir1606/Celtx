@@ -84,7 +84,7 @@ To publish on GitHub Pages:
 2. In the repository, go to **Settings → Pages** and set **Source** to `Deploy from a branch`, branch `main`, folder `/ (root)`.
 3. The site appears at `https://<user>.github.io/<repo>/`.
 
-**After changing any file**, increase the `?v=` number on the `<link>` and `<script>` tags in `index.html` (for example `?v=8` to `?v=9`) and `VERSION` in `sw.js` to the same number. The new `VERSION` makes installed copies fetch the update. GitHub Pages lets browsers cache files for 10 minutes. Without a new number, a visitor can get the new page together with old cached scripts, and new buttons then silently do nothing.
+**After changing any file**, increase the `?v=` number on the `<link>` and `<script>` tags in `index.html` (for example `?v=9` to `?v=10`) and `VERSION` in `sw.js` to the same number. The new `VERSION` makes installed copies fetch the update. GitHub Pages lets browsers cache files for 10 minutes. Without a new number, a visitor can get the new page together with old cached scripts, and new buttons then silently do nothing.
 
 ## Files
 

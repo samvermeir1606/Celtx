@@ -1,6 +1,6 @@
 /* Scriptdesk — offline support. Keeps a copy of the app so it opens without an internet connection.
    When you change any file, raise VERSION here and the ?v= numbers in index.html. */
-const VERSION = '8';
+const VERSION = '9';
 const CACHE = 'scriptdesk-v' + VERSION;
 const RUNTIME = 'scriptdesk-runtime';
 const ASSETS = [
