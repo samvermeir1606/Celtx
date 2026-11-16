@@ -2015,7 +2015,17 @@
     };
     document.addEventListener('click', (e) => {
       const a = e.target.closest('[data-action]');
-      if (a) { closeMenus(); actions[a.dataset.action]?.(); return; }
+      if (a) {
+        closeMenus();
+        const run = actions[a.dataset.action];
+        if (run) run();
+        else {
+          // Happens when the browser mixes a new page with old cached scripts.
+          console.warn('Scriptdesk: no handler for action', a.dataset.action);
+          toast('This button needs the latest version of Scriptdesk — press Ctrl+F5 to reload.');
+        }
+        return;
+      }
       const dd = e.target.closest('[data-dropdown]');
       if (dd) {
         const wrap = dd.closest('.dropdown');
