@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap">
-  <link rel="stylesheet" href="css/app.css?v=3">
-  <link rel="stylesheet" href="css/script.css?v=3">
+  <link rel="stylesheet" href="css/app.css?v=5">
+  <link rel="stylesheet" href="css/script.css?v=5">
   <style id="page-size-style">@page { size: letter; }</style>
 </head>
 <body>
@@ -36,6 +36,7 @@
             <button class="menu-item" data-action="saveas">Save project as…<span class="kbd-hint">Ctrl+Shift+S</span></button>
           </div>
         </div>
+        <button class="goal-chip" id="goal-chip" data-action="goals" title="Writing goals and sprint timer">⏱</button>
         <button class="icon-btn" data-action="settings" title="Settings" aria-label="Settings">⚙</button>
         <button class="icon-btn" data-action="help" title="Help & shortcuts" aria-label="Help">?</button>
       </nav>
@@ -53,8 +54,13 @@
                 <button class="menu-item" data-action="add-stageplay">🎭 Stage Play</button>
                 <button class="menu-item" data-action="add-audioplay">🎙️ Audio Play</button>
                 <button class="menu-item" data-action="add-comic">💬 Comic Book</button>
+                <button class="menu-item" data-action="add-av">📺 AV Script (video / audio)</button>
                 <div class="menu-sep"></div>
                 <button class="menu-item" data-action="add-storyline">〰️ Storyline (character flow)</button>
+                <button class="menu-item" data-action="add-storyboard">🎞️ Storyboard</button>
+                <button class="menu-item" data-action="add-beatboard">🧭 Beat Board</button>
+                <button class="menu-item" data-action="add-sketch">📐 Sketch (camera &amp; set plan)</button>
+                <button class="menu-item" data-action="add-schedule">📅 Production Schedule</button>
                 <button class="menu-item" data-action="add-note">📝 Notes</button>
               </div>
             </div>
@@ -95,11 +101,15 @@
   <div class="drop-overlay">Drop a .scriptdesk, .celtx, .fountain or .fdx file to open it</div>
   <input type="file" id="file-input" accept=".scriptdesk,.json,.celtx,.fountain,.spmd,.txt,.fdx" hidden>
 
-  <script src="js/formats.js?v=3"></script>
-  <script src="js/catalog.js?v=3"></script>
-  <script src="js/storyline.js?v=3"></script>
-  <script src="js/formats-io.js?v=3"></script>
-  <script src="js/editor.js?v=3"></script>
-  <script src="js/app.js?v=3"></script>
+  <script src="js/formats.js?v=5"></script>
+  <script src="js/catalog.js?v=5"></script>
+  <script src="js/storyline.js?v=5"></script>
+  <script src="js/storyboard.js?v=5"></script>
+  <script src="js/beatboard.js?v=5"></script>
+  <script src="js/sketch.js?v=5"></script>
+  <script src="js/schedule.js?v=5"></script>
+  <script src="js/formats-io.js?v=5"></script>
+  <script src="js/editor.js?v=5"></script>
+  <script src="js/app.js?v=5"></script>
 </body>
 </html>

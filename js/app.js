@@ -32,6 +32,36 @@
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
 
+  // The working copy of the open project lives in IndexedDB, which has room for
+  // storyboard pictures (localStorage stops at about 5 MB). Falls back to localStorage.
+  const idb = {
+    open() {
+      if (!idb.p) {
+        idb.p = new Promise((res, rej) => {
+          if (!window.indexedDB) { rej(new Error('no IndexedDB')); return; }
+          const rq = indexedDB.open('scriptdesk', 1);
+          rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+          rq.onsuccess = () => res(rq.result);
+          rq.onerror = () => rej(rq.error);
+        });
+        idb.p.catch(() => {});
+      }
+      return idb.p;
+    },
+    async run(mode, fn) {
+      const db = await idb.open();
+      return new Promise((res, rej) => {
+        const tx = db.transaction('kv', mode);
+        const rq = fn(tx.objectStore('kv'));
+        tx.oncomplete = () => res(rq && rq.result);
+        tx.onerror = tx.onabort = () => rej(tx.error);
+      });
+    },
+    get: (k) => idb.run('readonly', (os) => os.get(k)),
+    set: (k, v) => idb.run('readwrite', (os) => os.put(v, k)),
+    del: (k) => idb.run('readwrite', (os) => os.delete(k)),
+  };
+
   const state = {
     project: null,
     docId: null,
@@ -41,9 +71,10 @@
     dirty: false,
     sceneId: null,
     caretIndex: 0,
-    reportTab: 'scenes',
+    reportTab: 'health',
     catalogFilter: 'all',
     editorStale: true,
+    kindTab: {},
   };
   let editor;
 
@@ -59,24 +90,26 @@
   // =====================================================================
   // init
   // =====================================================================
-  function init() {
+  async function init() {
     applyTheme(store.get(KEYS.theme) || 'system');
     editor = new SD.ScriptEditor($('#editor'), {
       onChange: onEditorChange,
       onCaret,
       getSuggestions,
+      onRender: () => refreshHighlights(),
     });
     bindChrome();
     applyZoom(+store.get(KEYS.zoom) || 100);
 
     let restored = null;
-    const saved = store.get(KEYS.autosave);
-    if (saved) {
+    let saved = null;
+    try { saved = await idb.get(KEYS.autosave); } catch (e) { /* IndexedDB unavailable */ }
+    if (!saved) { try { saved = JSON.parse(store.get(KEYS.autosave) || 'null'); } catch (e) { saved = null; } }
+    if (saved && saved.project) {
       try {
-        const d = JSON.parse(saved);
-        restored = SD.migrate(d.project);
-        state.fileName = d.fileName || null;
-        state.dirty = !!d.dirty;
+        restored = SD.migrate(saved.project);
+        state.fileName = saved.fileName || null;
+        state.dirty = !!saved.dirty;
       } catch (e) { restored = null; }
     }
     if (restored) {
@@ -101,7 +134,11 @@
     editor.histories = {};
     editor.doc = null;
     applyProjectSettings();
+    stopTableRead(true);
+    closeFind(false);
+    logToday();
     renderAll();
+    renderGoalChip();
     autosave();
   }
 
@@ -116,13 +153,24 @@
   // =====================================================================
   // dirty state, autosave
   // =====================================================================
-  const autosave = debounce(() => {
+  const autosave = debounce(async () => {
     if (!state.project) return;
-    const ok = store.set(KEYS.autosave, JSON.stringify({ project: state.project, fileName: state.fileName, dirty: state.dirty }));
-    if (!ok && !autosave.warned) { autosave.warned = true; toast('Browser storage is full or blocked — remember to Save your project file.'); }
+    const copy = { project: state.project, fileName: state.fileName, dirty: state.dirty };
+    let ok = false;
+    try {
+      await idb.set(KEYS.autosave, copy);
+      ok = true;
+      if (store.get(KEYS.autosave)) store.del(KEYS.autosave); // older copy from before IndexedDB
+    } catch (e) {
+      ok = store.set(KEYS.autosave, JSON.stringify(copy));
+      // never leave an older copy behind that would come back on the next visit
+      if (!ok) { store.del(KEYS.autosave); idb.del(KEYS.autosave).catch(() => {}); }
+    }
+    if (!ok && !autosave.warned) { autosave.warned = true; toast('This browser could not keep a working copy — remember to Save your project file.'); }
   }, 700);
 
   function markDirty() {
+    trackWords();
     state.dirty = true;
     state.project.modified = new Date().toISOString();
     renderSaveState();
@@ -151,9 +199,11 @@
     if (!$('#inspector').contains(document.activeElement)) renderInspector();
   }, 250);
 
+  const runFindSoon = debounce(() => runFind(), 200);
   function onEditorChange() {
     markDirty();
     refreshDerived();
+    if (finder.open) runFindSoon();
   }
 
   function onCaret(info) {
@@ -231,8 +281,9 @@
   function renderDocList() {
     const list = $('#doc-list');
     const items = state.project.documents.map((d) => {
-      const icon = d.kind === 'note' ? '📝' : d.kind === 'storyline' ? '〰️' : SD.SCRIPT_TYPES[d.scriptType].icon;
-      const sub = d.kind === 'note' ? 'Notes' : d.kind === 'storyline' ? 'Storyline' : SD.SCRIPT_TYPES[d.scriptType].label;
+      const K = SD.KINDS[d.kind];
+      const icon = K ? K.icon : d.kind === 'note' ? '📝' : d.kind === 'storyline' ? '〰️' : d.kind === 'storyboard' ? '🎞️' : SD.SCRIPT_TYPES[d.scriptType].icon;
+      const sub = K ? K.label : d.kind === 'note' ? 'Notes' : d.kind === 'storyline' ? 'Storyline' : d.kind === 'storyboard' ? 'Storyboard' : SD.SCRIPT_TYPES[d.scriptType].label;
       return h('li', {
         class: 'doc-item' + (d.id === state.docId ? ' active' : ''),
         title: sub,
@@ -266,12 +317,21 @@
   function addDoc(kind) {
     let d;
     const count = (pred) => state.project.documents.filter(pred).length;
-    if (kind === 'note') d = SD.newNote(count((x) => x.kind === 'note') ? 'Notes ' + (count((x) => x.kind === 'note') + 1) : 'Notes');
+    if (SD.KINDS[kind]) {
+      const K = SD.KINDS[kind];
+      const n = count((x) => x.kind === kind);
+      d = K.create(state.project, K.label + (n ? ' ' + (n + 1) : ''));
+    } else if (kind === 'note') d = SD.newNote(count((x) => x.kind === 'note') ? 'Notes ' + (count((x) => x.kind === 'note') + 1) : 'Notes');
     else if (kind === 'storyline') {
       const n = count((x) => x.kind === 'storyline');
       d = SD.newStoryline('Storyline' + (n ? ' ' + (n + 1) : ''));
       const scripts = state.project.documents.filter((x) => x.kind === 'script' && SD.getScenes(x).length);
       if (scripts.length === 1) SD.syncStorylineFromScript(state.project, d, scripts[0]);
+    } else if (kind === 'storyboard') {
+      const n = count((x) => x.kind === 'storyboard');
+      d = SD.newStoryboard('Storyboard' + (n ? ' ' + (n + 1) : ''));
+      const scripts = state.project.documents.filter((x) => x.kind === 'script' && SD.getScenes(x).length);
+      if (scripts.length === 1) SD.syncStoryboardFromScript(state.project, d, scripts[0]);
     } else {
       const n = count((x) => x.scriptType === kind);
       d = SD.newScript(kind, SD.SCRIPT_TYPES[kind].label + (n ? ' ' + (n + 1) : ''));
@@ -381,6 +441,32 @@
       h('span', { class: 'scene-len' }, b.events.length ? b.events.length + '★' : ''))) : [h('li', { class: 'side-empty' }, 'No moments yet.')]));
       return;
     }
+    if (d && SD.KINDS[d.kind]) {
+      const K = SD.KINDS[d.kind];
+      const nav = K.navigator ? K.navigator(d) : null;
+      $('#scene-head-label').textContent = nav ? nav.label : 'Scenes';
+      $('#scene-count').textContent = nav && nav.items.length ? nav.items.length : '';
+      list.replaceChildren(...(nav && nav.items.length ? nav.items.map((it) => h('li', {
+        class: 'scene-item' + (it.current ? ' current' : ''),
+        style: it.color ? `--scene-color:${it.color}` : '',
+        title: it.title || '',
+        onclick: it.onclick,
+      }, h('span', { class: 'scene-num' }, it.num == null ? '' : it.num), h('span', { class: 'scene-text' }, it.text), h('span', { class: 'scene-len' }, it.len || ''))) : [h('li', { class: 'side-empty' }, nav ? nav.empty : 'Nothing to list here.')]));
+      return;
+    }
+    if (d && d.kind === 'storyboard') {
+      $('#scene-head-label').textContent = 'Sequences';
+      $('#scene-count').textContent = d.sequences.length || '';
+      const nums = SD.storyboardNumbers(state.project, d);
+      const cur = state.sbSel && state.sbSel.doc === d.id ? state.sbSel.seq : null;
+      list.replaceChildren(...(d.sequences.length ? d.sequences.map((s) => h('li', {
+        class: 'scene-item' + (cur === s.id ? ' current' : ''),
+        onclick: () => { state.sbSel = { doc: d.id, seq: s.id }; state.sbRefresh && state.sbRefresh(s.id); renderNavigator(); },
+      }, h('span', { class: 'scene-num' }, nums.get(s.id)),
+      h('span', { class: 'scene-text' }, s.title || h('em', {}, 'Untitled sequence')),
+      h('span', { class: 'scene-len' }, s.shots.length || ''))) : [h('li', { class: 'side-empty' }, 'No sequences yet.')]));
+      return;
+    }
     if (!d || d.kind !== 'script') {
       $('#scene-head-label').textContent = 'Scenes';
       list.replaceChildren(h('li', { class: 'side-empty' }, isCatalog() ? 'Pick a script to see its scenes.' : 'Notes have no scenes.'));
@@ -429,6 +515,8 @@
   // =====================================================================
   function renderView() {
     const d = currentDoc();
+    if (reader.on && (!d || d.id !== reader.docId || state.view !== 'script')) stopTableRead(true);
+    if (finder.open && (!d || d.kind !== 'script' || state.view !== 'script')) closeFind(false);
     const showEditor = !!(d && d.kind === 'script' && state.view === 'script');
     $('#editor-wrap').hidden = !showEditor;
     $('#other-view').hidden = showEditor;
@@ -448,6 +536,8 @@
       else if (!d) ov.append(h('div', { class: 'empty-state' }, h('p', {}, 'This project has no documents. Use + in the sidebar to add one.')));
       else if (d.kind === 'note') renderNote(ov, d);
       else if (d.kind === 'storyline') renderStoryline(ov, d);
+      else if (d.kind === 'storyboard') renderStoryboard(ov, d);
+      else if (SD.KINDS[d.kind]) SD.KINDS[d.kind].render(ov, d);
       else if (state.view === 'title') renderTitleView(ov, d);
       else if (state.view === 'cards') renderCards(ov, d);
       else if (state.view === 'reports') renderReports(ov, d);
@@ -469,10 +559,27 @@
     if (isCatalog()) { tabs.replaceChildren(h('div', { class: 'view-title' }, '🗂️ Master Catalog')); return; }
     if (!d) { tabs.replaceChildren(); return; }
     if (d.kind === 'note') { tabs.replaceChildren(h('div', { class: 'view-title' }, '📝 ' + d.name)); return; }
+    if (SD.KINDS[d.kind]) {
+      const K = SD.KINDS[d.kind];
+      if (!K.tabs) { tabs.replaceChildren(h('div', { class: 'view-title' }, K.icon + ' ' + d.name)); return; }
+      const cur = state.kindTab[d.kind] || K.tabs[0][0];
+      tabs.replaceChildren(...K.tabs.map(([v, label]) => h('button', {
+        class: 'tab' + (cur === v ? ' active' : ''),
+        onclick: () => { state.kindTab[d.kind] = v; renderView(); },
+      }, label)));
+      return;
+    }
     if (d.kind === 'storyline') {
       tabs.replaceChildren(...[['flow', 'Flow'], ['grid', 'Grid']].map(([v, label]) => h('button', {
         class: 'tab' + ((state.storyTab || 'flow') === v ? ' active' : ''),
         onclick: () => { state.storyTab = v; renderView(); },
+      }, label)));
+      return;
+    }
+    if (d.kind === 'storyboard') {
+      tabs.replaceChildren(...[['board', 'Board'], ['list', 'Shot list']].map(([v, label]) => h('button', {
+        class: 'tab' + ((state.sbTab || 'board') === v ? ' active' : ''),
+        onclick: () => { state.sbTab = v; renderView(); },
       }, label)));
       return;
     }
@@ -497,6 +604,9 @@
           h('button', { class: 'btn ghost small', title: 'Print or save as PDF', onclick: () => printStoryline(d) }, 'Print')));
       return;
     }
+    if (d && d.kind === 'storyboard') { tb.replaceChildren(...storyboardToolbar(d)); return; }
+    if (d && SD.KINDS[d.kind]) { tb.replaceChildren(...(SD.KINDS[d.kind].toolbar ? SD.KINDS[d.kind].toolbar(d) : [])); return; }
+    if (d && d.kind === 'note') { tb.replaceChildren(...noteToolbar(d)); return; }
     if (!d || d.kind !== 'script' || state.view !== 'script') { tb.replaceChildren(); return; }
     const types = SD.SCRIPT_TYPES[d.scriptType];
     const sel = h('select', {
@@ -517,6 +627,11 @@
         h('input', { type: 'checkbox', checked: s.sceneNumbers, onchange: (e) => { s.sceneNumbers = e.target.checked; applyProjectSettings(); markDirty(); } }), '#'),
       h('select', { class: 'select', title: 'Zoom', onchange: (e) => applyZoom(+e.target.value) },
         [75, 90, 100, 110, 125, 150].map((z) => h('option', { value: z, selected: z === state.zoom }, z + '%'))),
+      h('div', { class: 'tb-group' },
+        h('button', { class: 'btn ghost small', title: 'Find & replace (Ctrl+F, Ctrl+H)', onclick: () => openFind(false) }, '🔍 Find'),
+        h('button', { class: 'btn ghost small', title: 'Comment on the selected words (Ctrl+Alt+M)', onmousedown: (e) => e.preventDefault(), onclick: addComment }, '💬 Comment'),
+        commentCount(d) ? h('button', { class: 'btn ghost small', title: 'All comments in this script', onclick: () => showAllComments(d) }, commentCount(d) + ' open') : null,
+        h('button', { class: 'btn ghost small' + (reader.on ? ' primary' : ''), title: 'Table read: the script is read aloud from the cursor, one voice per character', onclick: () => (reader.on ? stopTableRead() : startTableRead()) }, reader.on ? '■ Stop reading' : '🔊 Table read')),
       h('button', { class: 'btn ghost small', title: 'Show or hide the scene panel', onclick: toggleInspector }, 'Scene panel'),
     );
   }
@@ -568,6 +683,7 @@
       h('div', { class: 'ins-section' },
         h('div', { class: 'ins-kicker' }, `${d.scriptType === 'comic' ? 'Page' : 'Scene'} ${sc.number} · ${SD.eighths(sc.lines)} pg · p. ${sc.page}`),
         h('div', { class: 'ins-title' }, (d.scriptType === 'comic' ? 'PAGE ' + sc.number + ' ' : '') + (e.text.toUpperCase() || '') || 'Untitled scene')),
+      sceneCommentsSection(d, sc),
       h('div', { class: 'ins-section' },
         h('label', { class: 'lbl' }, 'Synopsis'),
         h('textarea', { class: 'input', rows: 3, placeholder: 'What happens in this scene?', value: e.synopsis || '', oninput: (ev) => { e.synopsis = ev.target.value; touched(); } }),
@@ -773,6 +889,7 @@
 
   function buildReport(d, tab) {
     const scenes = SD.getScenes(d);
+    if (tab === 'health') return healthReport(d);
     if (tab === 'scenes') {
       return reportTable(['#', 'Scene', 'Page', 'Length', 'Characters', 'Synopsis'], scenes.map((s) => [
         s.number, s.el.text.toUpperCase() || '—', s.page, SD.eighths(s.lines), SD.sceneCharacters(d, s).join(', '), s.el.synopsis || '',
@@ -822,7 +939,7 @@
   }
 
   function renderReports(root, d) {
-    const tabs = [['scenes', 'Scenes'], ['characters', 'Characters'], ['locations', 'Locations'], ['breakdown', 'Breakdown sheets']];
+    const tabs = [['health', 'Health'], ['scenes', 'Scenes'], ['characters', 'Characters'], ['locations', 'Locations'], ['breakdown', 'Breakdown sheets']];
     const words = SD.wordCount(d);
     const est = SD.estimate(d);
     const scenes = SD.getScenes(d);
@@ -1097,14 +1214,715 @@
     window.print();
   }
 
-  // ---------- Notes ----------
-  function renderNote(root, d) {
-    const ta = h('textarea', {
-      class: 'note-editor', value: d.text, placeholder: 'Ideas, outlines, research, character bios…', spellcheck: true,
-      oninput: (e) => { d.text = e.target.value; markDirty(); renderStatusSoon(); },
+  // ---------- Storyboard ----------
+  const sbSel = (d) => (state.sbSel && state.sbSel.doc === d.id ? state.sbSel : { doc: d.id });
+  const sbSource = (d) => state.project.documents.find((x) => x.id === d.sourceId && x.kind === 'script') || null;
+  const sbMeta = (shot) => [shot.shotType, shot.move, shot.lens, shot.duration ? shot.duration + 's' : ''].filter(Boolean).join(' · ');
+  function sbFind(d, shotId) {
+    for (const seq of d.sequences) {
+      const index = seq.shots.findIndex((x) => x.id === shotId);
+      if (index >= 0) return { seq, shot: seq.shots[index], index };
+    }
+    return null;
+  }
+  const sbShotNo = (d, seq, index) => SD.storyboardNumbers(state.project, d).get(seq.id) + SD.shotLetters(index);
+  const sbFrameKids = (shot, empty) => [
+    shot.image ? h('img', { src: shot.image, alt: '' }) : null,
+    shot.drawing ? h('img', { class: 'sb-drawing', src: shot.drawing, alt: '' }) : null,
+    !shot.image && !shot.drawing && empty ? h('span', { class: 'sb-frame-empty' }, empty) : null,
+  ];
+  const isImageFile = (f) => f && /^image\//.test(f.type);
+
+  function storyboardToolbar(d) {
+    const refresh = () => state.sbRefresh && state.sbRefresh();
+    return [
+      h('button', { class: 'btn small', onclick: () => { sbAddSequence(d); refresh(); } }, '+ Sequence'),
+      h('button', { class: 'btn small', onclick: () => { sbAddShot(d); refresh(); } }, '+ Shot'),
+      h('button', { class: 'btn small', title: 'Make a sequence for every scene of a script', onclick: (e) => sbBuildMenu(e.currentTarget, d, refresh) }, d.sourceId ? '⟳ Update from script' : 'Build from script…'),
+      h('div', { class: 'tb-group' },
+        h('button', { class: 'btn ghost small', title: 'Play the shots one after another, like an animatic', onclick: () => sbPlay(d) }, '▶ Play'),
+        h('button', { class: 'btn ghost small', title: 'Download the shot list as a spreadsheet (CSV)', onclick: () => download(safeName(d.name) + ' - shot list.csv', sbShotListCSV(d), 'text/csv;charset=utf-8') }, 'CSV'),
+        h('button', { class: 'btn ghost small', title: 'Print or save as PDF (Ctrl+P)', onclick: () => printStoryboard(d) }, 'Print')),
+    ];
+  }
+
+  function sbBuildMenu(anchor, d, done) {
+    const scripts = state.project.documents.filter((x) => x.kind === 'script');
+    if (!scripts.length) { toast('There is no script in this project yet.'); return; }
+    popupMenu(anchor, scripts.map((s) => ({
+      label: (s.id === d.sourceId ? '✓ ' : '') + s.name + ' — ' + SD.getScenes(s).length + ' scenes',
+      run: () => { const r = SD.syncStoryboardFromScript(state.project, d, s); markDirty(); toast(`Synced with “${s.name}”: ${r.scenes} scenes${r.added ? `, ${r.added} new` : ''}.`); done(); },
+    })));
+  }
+
+  function sbAddSequence(d) {
+    const sel = sbSel(d);
+    const cur = d.sequences.findIndex((s) => s.id === sel.seq);
+    const seq = { id: SD.uid(), title: '', shots: [] };
+    d.sequences.splice(cur >= 0 ? cur + 1 : d.sequences.length, 0, seq);
+    state.sbSel = { doc: d.id, seq: seq.id };
+    markDirty();
+    return seq;
+  }
+
+  // New shot after the selected one, or at the end of the selected / given sequence.
+  function sbAddShot(d, seq, props) {
+    const sel = sbSel(d);
+    let at;
+    if (!seq) {
+      const f = sel.shot && sbFind(d, sel.shot);
+      if (f) { seq = f.seq; at = f.index + 1; }
+      else seq = d.sequences.find((s) => s.id === sel.seq) || d.sequences[d.sequences.length - 1];
+    }
+    if (!seq) seq = sbAddSequence(d);
+    const shot = SD.newShot(props);
+    seq.shots.splice(at == null ? seq.shots.length : at, 0, shot);
+    state.sbSel = { doc: d.id, seq: seq.id, shot: shot.id, focus: true };
+    markDirty();
+    return shot;
+  }
+
+  function sbDraft(d, seq, done) {
+    const script = sbSource(d);
+    const shots = script && seq.sceneId ? SD.draftShotsForScene(script, seq.sceneId) : [];
+    if (!shots.length) { toast('This scene has no action or dialogue to turn into shots yet.'); return; }
+    seq.shots.push(...shots);
+    markDirty();
+    toast(`Drafted ${shots.length} shots from the scene. Change or delete them as you like.`);
+    done();
+  }
+
+  async function sbImageFrom(fileOrBlob) {
+    try { return await SD.imageToDataUrl(fileOrBlob, 1280); } catch (e) { toast('That picture could not be read.'); return null; }
+  }
+
+  function sbPickImage(shot, ui, field = 'image') {
+    const inp = h('input', { type: 'file', accept: 'image/*' });
+    inp.addEventListener('change', async () => {
+      const f = inp.files[0];
+      if (!f) return;
+      const url = await sbImageFrom(f);
+      if (url) { shot[field] = url; ui.changed(); ui.sync(shot, field); }
     });
-    root.append(h('div', { class: 'note-wrap' }, ta));
-    setTimeout(() => ta.focus(), 0);
+    inp.click();
+  }
+
+  function renderStoryboard(root, d) {
+    const canvas = h('div', { class: 'sb-canvas' });
+    const panel = h('aside', { class: 'story-panel sb-panel' });
+    const shell = h('div', { class: 'story sb' }, canvas, panel);
+    root.append(shell);
+    const tab = state.sbTab || 'board';
+
+    const draw = () => {
+      const top = canvas.scrollTop;
+      canvas.replaceChildren(tab === 'list' ? sbList(d, ui) : sbBoard(d, ui));
+      canvas.scrollTop = top;
+    };
+    const drawPanel = () => panel.replaceChildren(...sbPanel(d, ui));
+    const ui = {
+      // Selecting only moves the highlight, so a caption you are typing in keeps its focus.
+      select(sel) {
+        state.sbSel = Object.assign({ doc: d.id }, sel);
+        for (const el of canvas.querySelectorAll('.on[data-card], .on[data-seqhead], tr.on')) el.classList.remove('on');
+        if (sel.shot) canvas.querySelectorAll(`[data-card="${sel.shot}"]`).forEach((el) => el.classList.add('on'));
+        else if (sel.seq) canvas.querySelectorAll(`[data-seqhead="${sel.seq}"]`).forEach((el) => el.classList.add('on'));
+        drawPanel();
+        renderNavigator();
+      },
+      changed() { markDirty(); renderStatusSoon(); renderNavigatorSoon(); },
+      full() { draw(); drawPanel(); renderNavigator(); renderStatus(); applyFocus(); },
+      // Copy a changed value into every other control that shows it.
+      sync(shot, field) {
+        for (const el of shell.querySelectorAll(`[data-shot="${shot.id}"][data-field="${field}"]`)) if (el !== document.activeElement) el.value = shot[field] == null ? '' : shot[field];
+        for (const el of shell.querySelectorAll(`[data-shot="${shot.id}"][data-meta]`)) el.textContent = sbMeta(shot);
+        if (field === 'duration') for (const el of shell.querySelectorAll('[data-total]')) el.textContent = SD.formatSeconds(SD.storyboardStats(d).seconds);
+        if (field === 'image' || field === 'drawing' || field === 'diagram') {
+          for (const el of shell.querySelectorAll(`[data-shot="${shot.id}"][data-frame]`)) el.replaceChildren(...sbFrameKids(shot, el.dataset.frame));
+          drawPanel();
+        }
+      },
+    };
+    // after adding a shot, put the cursor in its caption
+    const applyFocus = () => {
+      const s = state.sbSel;
+      if (!s || s.doc !== d.id || !s.focus) return;
+      delete s.focus;
+      const el = canvas.querySelector(`[data-card="${s.shot}"]`);
+      if (el) { el.scrollIntoView({ block: 'nearest' }); const cap = el.querySelector('textarea'); if (cap) cap.focus({ preventScroll: true }); }
+    };
+    state.sbRefresh = (seqId) => {
+      ui.full();
+      if (seqId) { const el = canvas.querySelector(`[data-seqhead="${seqId}"]`); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+    };
+
+    // pictures dropped from your computer, and shots dragged to a new place
+    let dragShot = null;
+    const clearMarks = () => canvas.querySelectorAll('.drop-before, .drop-after, .drop-img, .drop-seq').forEach((el) => el.classList.remove('drop-before', 'drop-after', 'drop-img', 'drop-seq'));
+    const dropSpot = (e) => {
+      const card = e.target.closest('[data-card]');
+      const strip = e.target.closest('[data-seq]');
+      if (card) { const r = card.getBoundingClientRect(); return { card, strip, after: e.clientX > r.left + r.width / 2 }; }
+      return strip ? { strip } : null;
+    };
+    canvas.addEventListener('dragstart', (e) => {
+      const fr = e.target.closest && e.target.closest('[data-card] .sb-frame');
+      if (!fr) return;
+      dragShot = fr.closest('[data-card]').dataset.card;
+      e.dataTransfer.setData('text/x-scriptdesk-shot', dragShot);
+      e.dataTransfer.effectAllowed = 'move';
+      fr.closest('[data-card]').classList.add('dragging');
+    });
+    canvas.addEventListener('dragend', () => { dragShot = null; clearMarks(); canvas.querySelectorAll('.dragging').forEach((el) => el.classList.remove('dragging')); });
+    canvas.addEventListener('dragover', (e) => {
+      const files = !dragShot && [...e.dataTransfer.types].includes('Files');
+      if (!files && !dragShot) return;
+      e.stopPropagation();
+      const spot = dropSpot(e);
+      clearMarks();
+      if (!spot) { if (files) e.dataTransfer.dropEffect = 'none'; e.preventDefault(); return; }
+      e.preventDefault();
+      if (files) { (spot.card || spot.strip).classList.add(spot.card ? 'drop-img' : 'drop-seq'); e.dataTransfer.dropEffect = 'copy'; }
+      else if (spot.card) spot.card.classList.add(spot.after ? 'drop-after' : 'drop-before');
+      else spot.strip.classList.add('drop-seq');
+    });
+    canvas.addEventListener('drop', async (e) => {
+      const spot = dropSpot(e);
+      const moving = dragShot;
+      dragShot = null;
+      const files = moving ? [] : [...(e.dataTransfer.files || [])].filter(isImageFile);
+      clearMarks();
+      if (!files.length && !moving) { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); e.stopPropagation(); toast('Only pictures can be dropped on the storyboard.'); } return; }
+      e.preventDefault();
+      e.stopPropagation();
+      if (!spot) return;
+      const seq = d.sequences.find((s) => s.id === spot.strip.dataset.seq);
+      if (!seq) return;
+      let index = spot.card ? seq.shots.findIndex((x) => x.id === spot.card.dataset.card) + (spot.after ? 1 : 0) : seq.shots.length;
+      if (moving) {
+        const f = sbFind(d, moving);
+        if (!f) return;
+        f.seq.shots.splice(f.index, 1);
+        if (f.seq === seq && f.index < index) index--;
+        seq.shots.splice(index, 0, f.shot);
+        state.sbSel = { doc: d.id, seq: seq.id, shot: f.shot.id };
+        ui.changed(); ui.full();
+        return;
+      }
+      // a picture dropped on a shot fills that shot; more pictures (or dropped on a gap) become new shots
+      let first = files;
+      if (spot.card) {
+        const shot = seq.shots.find((x) => x.id === spot.card.dataset.card);
+        const url = await sbImageFrom(files[0]);
+        if (url) shot.image = url;
+        first = files.slice(1);
+        index = seq.shots.indexOf(shot) + 1;
+        state.sbSel = { doc: d.id, seq: seq.id, shot: shot.id };
+      }
+      for (const f of first) {
+        const url = await sbImageFrom(f);
+        if (!url) continue;
+        const shot = SD.newShot({ image: url, caption: '' });
+        seq.shots.splice(index++, 0, shot);
+        state.sbSel = { doc: d.id, seq: seq.id, shot: shot.id };
+      }
+      ui.changed(); ui.full();
+    });
+
+    ui.full();
+  }
+
+  // Paste a picture into the selected shot (bound once, works while a storyboard is open).
+  document.addEventListener('paste', async (e) => {
+    const d = currentDoc();
+    if (!d || d.kind !== 'storyboard' || !state.sbRefresh) return;
+    const items = [...(e.clipboardData ? e.clipboardData.items : [])];
+    const item = items.find((it) => it.kind === 'file' && /^image\//.test(it.type));
+    if (!item) return;
+    // text pasted into a field stays text
+    if (e.target.closest && e.target.closest('input, textarea, [contenteditable]') && items.some((it) => it.type === 'text/plain')) return;
+    const sel = sbSel(d);
+    e.preventDefault();
+    const url = await sbImageFrom(item.getAsFile());
+    if (!url) return;
+    const f = sel.shot && sbFind(d, sel.shot);
+    if (f) f.shot.image = url;
+    else sbAddShot(d, null, { image: url });
+    markDirty();
+    state.sbRefresh();
+    toast('Picture pasted.');
+  });
+
+  function sbField(tag, shot, field, ui, props = {}, kids = []) {
+    const el = h(tag, Object.assign({}, props, {
+      dataset: { shot: shot.id, field },
+      oninput: (e) => {
+        shot[field] = props.type === 'number' ? Math.max(0, Math.round((+e.target.value || 0) * 10) / 10) : e.target.value;
+        ui.changed();
+        ui.sync(shot, field);
+      },
+    }), kids);
+    el.value = shot[field] == null ? '' : shot[field];
+    return el;
+  }
+  const sbTypeSelect = (shot, ui, cls) => sbField('select', shot, 'shotType', ui, { class: cls, title: 'Shot type' },
+    [h('option', { value: '' }, '— Shot type —'), SD.SHOT_TYPES.map((t) => h('option', { value: t.abbr }, `${t.abbr} · ${t.label}`))]);
+  const sbMoveSelect = (shot, ui, cls) => sbField('select', shot, 'move', ui, { class: cls, title: 'Camera movement' },
+    [h('option', { value: '' }, '— Camera —'), SD.CAMERA_MOVES.map((m) => h('option', { value: m }, m))]);
+
+  function sbBoard(d, ui) {
+    const sel = sbSel(d);
+    const nums = SD.storyboardNumbers(state.project, d);
+    const script = sbSource(d);
+    const board = h('div', { class: 'sb-board size-' + d.settings.size + (d.settings.details ? '' : ' no-details'), style: `--ratio:${SD.FRAME_RATIOS[d.ratio]}` });
+    if (!d.sequences.length) {
+      const scripts = state.project.documents.filter((x) => x.kind === 'script' && SD.getScenes(x).length);
+      board.append(h('div', { class: 'empty-state story-empty' },
+        h('div', { class: 'empty-icon' }, '🎞️'),
+        h('h3', {}, 'Plan your shots'),
+        h('p', { class: 'muted' }, 'A storyboard has a sequence for each scene, and a row of shots in each sequence. Give every shot a picture — a photo, a sketch you draw here, or anything you paste — and say what the camera does.'),
+        h('div', { class: 'row-gap center' },
+          scripts.length ? h('button', { class: 'btn primary', onclick: (e) => sbBuildMenu(e.currentTarget, d, ui.full) }, 'Build from a script…') : null,
+          h('button', { class: 'btn', onclick: () => { sbAddSequence(d); ui.full(); } }, '+ Add sequence'))));
+      return board;
+    }
+    d.sequences.forEach((seq) => {
+      const secs = seq.shots.reduce((n, x) => n + (+x.duration || 0), 0);
+      board.append(h('section', { class: 'sb-seq' },
+        h('div', { class: 'sb-seq-head' + (!sel.shot && sel.seq === seq.id ? ' on' : '') + (seq.orphan ? ' orphan' : ''), dataset: { seqhead: seq.id } },
+          h('button', { class: 'sb-seq-title', onclick: () => ui.select({ seq: seq.id }) },
+            h('span', { class: 'sb-seq-num' }, (seq.sceneId ? 'Scene ' : 'Sequence ') + nums.get(seq.id)),
+            h('span', { class: 'sb-seq-name' }, seq.title || 'Untitled sequence')),
+          seq.orphan ? h('span', { class: 'warn small' }, 'scene deleted from the script') : null,
+          h('span', { class: 'muted small' }, `${seq.shots.length} shot${seq.shots.length === 1 ? '' : 's'}` + (secs ? ' · ' + SD.formatSeconds(secs) : '')),
+          h('span', { class: 'push-right row-gap' },
+            !seq.shots.length && script && seq.sceneId && !seq.orphan ? h('button', { class: 'btn ghost small', title: 'One shot per action paragraph and speaker', onclick: () => sbDraft(d, seq, ui.full) }, 'Draft shots from the scene') : null,
+            h('button', { class: 'btn ghost small', onclick: () => { sbAddShot(d, seq); ui.full(); } }, '+ Shot'))),
+        h('div', { class: 'sb-shots', dataset: { seq: seq.id } },
+          seq.shots.map((shot, i) => sbCard(d, seq, shot, i, nums, sel, ui)),
+          h('button', { class: 'sb-add', title: 'Add a shot (or drop pictures here)', onclick: () => { sbAddShot(d, seq); ui.full(); } }, h('span', {}, '+'), h('small', {}, 'Shot')))));
+    });
+    board.append(h('p', { class: 'muted small sb-help' }, 'Double-click a frame to add a picture, or drop pictures from your computer onto it. Paste (Ctrl+V) puts a copied picture in the selected shot. Drag a frame to move the shot.'));
+    return board;
+  }
+
+  function sbCard(d, seq, shot, i, nums, sel, ui) {
+    const no = nums.get(seq.id) + SD.shotLetters(i);
+    const pick = () => ui.select({ seq: seq.id, shot: shot.id });
+    return h('div', { class: 'sb-card' + (sel.shot === shot.id ? ' on' : ''), dataset: { card: shot.id }, onmousedown: () => { if (sbSel(d).shot !== shot.id) pick(); } },
+      h('div', { class: 'sb-frame', draggable: 'true', title: 'Double-click to add a picture · drag to move', dataset: { shot: shot.id, frame: 'Double-click, drop or paste a picture' }, ondblclick: () => sbPickImage(shot, ui) },
+        sbFrameKids(shot, 'Double-click, drop or paste a picture')),
+      h('div', { class: 'sb-card-head' },
+        h('span', { class: 'sb-no' }, no),
+        h('span', { class: 'sb-meta', dataset: { shot: shot.id, meta: '1' } }, sbMeta(shot)),
+        h('button', {
+          class: 'icon-btn sb-more', title: 'More…', 'aria-label': 'Shot options',
+          onclick: (e) => popupMenu(e.currentTarget, [
+            { label: 'Picture…', run: () => sbPickImage(shot, ui) },
+            { label: 'Draw…', run: () => sbDraw(d, shot, ui) },
+            { label: 'Play from here', run: () => sbPlay(d, shot.id) },
+            '-',
+            { label: 'Insert shot after', run: () => { pick(); sbAddShot(d); ui.full(); } },
+            { label: 'Duplicate', run: () => { const c = Object.assign(SD.newShot(), JSON.parse(JSON.stringify(shot)), { id: SD.uid() }); seq.shots.splice(seq.shots.indexOf(shot) + 1, 0, c); ui.changed(); ui.full(); } },
+            { label: 'Delete shot', danger: true, run: () => { seq.shots.splice(seq.shots.indexOf(shot), 1); state.sbSel = { doc: d.id, seq: seq.id }; ui.changed(); ui.full(); } },
+          ]),
+        }, '⋯')),
+      sbField('textarea', shot, 'caption', ui, { class: 'sb-cap', rows: 3, placeholder: 'What do we see?', spellcheck: true }));
+  }
+
+  function sbList(d, ui) {
+    const sel = sbSel(d);
+    const nums = SD.storyboardNumbers(state.project, d);
+    if (!d.sequences.some((s) => s.shots.length)) return h('div', { class: 'empty-state' }, h('p', {}, 'No shots yet. Add them on the Board tab, or type them here after adding a sequence.'), h('button', { class: 'btn', onclick: () => { sbAddShot(d); ui.full(); } }, '+ Add shot'));
+    const body = [];
+    for (const seq of d.sequences) {
+      body.push(h('tr', { class: 'sl-seq' }, h('th', { colspan: 9 }, h('button', { onclick: () => ui.select({ seq: seq.id }) }, (seq.sceneId ? 'Scene ' : 'Sequence ') + nums.get(seq.id) + ' — ' + (seq.title || 'Untitled')))));
+      seq.shots.forEach((shot, i) => body.push(h('tr', { class: sel.shot === shot.id ? 'on' : '', dataset: { card: shot.id }, onfocusin: () => { if (sbSel(d).shot !== shot.id) ui.select({ seq: seq.id, shot: shot.id }); }, onclick: () => { if (sbSel(d).shot !== shot.id) ui.select({ seq: seq.id, shot: shot.id }); } },
+        h('td', { class: 'sl-no' }, nums.get(seq.id) + SD.shotLetters(i)),
+        h('td', { class: 'sl-pic' }, h('div', { class: 'sb-frame mini', dataset: { shot: shot.id, frame: '' }, ondblclick: () => sbPickImage(shot, ui) }, sbFrameKids(shot, ''))),
+        h('td', {}, sbField('textarea', shot, 'caption', ui, { class: 'sl-in', rows: 2, placeholder: 'What do we see?' })),
+        h('td', {}, sbTypeSelect(shot, ui, 'sl-in')),
+        h('td', {}, sbMoveSelect(shot, ui, 'sl-in')),
+        h('td', {}, sbField('input', shot, 'lens', ui, { class: 'sl-in', placeholder: '35mm', size: 5 })),
+        h('td', {}, sbField('input', shot, 'duration', ui, { class: 'sl-in num', type: 'number', min: 0, step: 0.5, placeholder: '0' })),
+        h('td', {}, sbField('textarea', shot, 'audio', ui, { class: 'sl-in', rows: 2, placeholder: 'Sound / dialogue' })),
+        h('td', {}, sbField('textarea', shot, 'notes', ui, { class: 'sl-in', rows: 2, placeholder: 'Notes' })))));
+    }
+    const st = SD.storyboardStats(d);
+    return h('div', { class: 'sl-wrap' },
+      h('table', { class: 'shot-list' },
+        h('thead', {}, h('tr', {}, ['Shot', 'Picture', 'Description', 'Type', 'Camera', 'Lens', 'Sec', 'Sound', 'Notes'].map((c) => h('th', {}, c)))),
+        h('tbody', {}, body),
+        h('tfoot', {}, h('tr', {}, h('td', { colspan: 6 }, `${st.shots} shots`), h('td', { dataset: { total: '1' } }, SD.formatSeconds(st.seconds)), h('td', { colspan: 2 })))));
+  }
+
+  function sbPanel(d, ui) {
+    const sec = (...kids) => h('div', { class: 'ins-section' }, ...kids);
+    const sel = sbSel(d);
+    const script = sbSource(d);
+    const f = sel.shot && sbFind(d, sel.shot);
+    if (f) {
+      const { seq, shot, index } = f;
+      const no = sbShotNo(d, seq, index);
+      return [
+        sec(h('div', { class: 'ins-kicker' }, `Shot ${no} · ${seq.title || 'Untitled sequence'}`),
+          h('div', { class: 'sb-frame big', style: `--ratio:${SD.FRAME_RATIOS[d.ratio]}`, dataset: { shot: shot.id, frame: 'No picture yet' }, ondblclick: () => sbPickImage(shot, ui) }, sbFrameKids(shot, 'No picture yet')),
+          h('div', { class: 'row-gap' },
+            h('button', { class: 'btn small', onclick: () => sbPickImage(shot, ui) }, shot.image ? 'Change picture…' : 'Picture…'),
+            h('button', { class: 'btn small', onclick: () => sbDraw(d, shot, ui) }, shot.drawing ? '✏️ Edit drawing' : '✏️ Draw'),
+            shot.image ? h('button', { class: 'btn ghost small', onclick: () => { shot.image = ''; ui.changed(); ui.sync(shot, 'image'); } }, 'Remove picture') : null,
+            shot.drawing ? h('button', { class: 'btn ghost small', onclick: () => { shot.drawing = ''; ui.changed(); ui.sync(shot, 'drawing'); } }, 'Clear drawing') : null)),
+        sec(h('label', { class: 'lbl' }, 'What do we see?'),
+          sbField('textarea', shot, 'caption', ui, { class: 'input', rows: 4, placeholder: 'Action in this shot' }),
+          h('div', { class: 'sb-grid2' },
+            h('div', {}, h('label', { class: 'lbl' }, 'Shot type'), sbTypeSelect(shot, ui, 'select')),
+            h('div', {}, h('label', { class: 'lbl' }, 'Camera'), sbMoveSelect(shot, ui, 'select')),
+            h('div', {}, h('label', { class: 'lbl' }, 'Lens'), sbField('input', shot, 'lens', ui, { class: 'input', placeholder: 'e.g. 35mm' })),
+            h('div', {}, h('label', { class: 'lbl' }, 'Seconds'), sbField('input', shot, 'duration', ui, { class: 'input', type: 'number', min: 0, step: 0.5, placeholder: '0' })))),
+        sec(h('label', { class: 'lbl' }, 'Sound & dialogue'),
+          sbField('textarea', shot, 'audio', ui, { class: 'input', rows: 2, placeholder: 'Lines, music, effects' }),
+          h('label', { class: 'lbl' }, 'Notes'),
+          sbField('textarea', shot, 'notes', ui, { class: 'input', rows: 2, placeholder: 'Lighting, props, VFX…' })),
+        sec(h('label', { class: 'lbl' }, 'Camera setup diagram'),
+          shot.diagram ? h('div', { class: 'sb-diagram' }, h('img', { src: shot.diagram, alt: 'Camera setup' })) : h('p', { class: 'muted small' }, 'Optional: a top-down plan of where the camera and actors stand.'),
+          h('div', { class: 'row-gap' },
+            h('button', { class: 'btn small', onclick: () => sbPickImage(shot, ui, 'diagram') }, shot.diagram ? 'Change…' : 'Add diagram…'),
+            h('button', {
+              class: 'btn small', title: 'Use one of the project’s sketches',
+              onclick: (e) => {
+                const sketches = state.project.documents.filter((x) => x.kind === 'sketch');
+                if (!sketches.length) { toast('Add a Sketch with + in the sidebar first.'); return; }
+                popupMenu(e.currentTarget, sketches.map((sk) => ({ label: '📐 ' + sk.name, run: async () => { shot.diagram = await SD.sketchToPng(sk, 900); ui.changed(); ui.sync(shot, 'diagram'); } })));
+              },
+            }, 'From a sketch…'),
+            shot.diagram ? h('button', { class: 'btn ghost small', onclick: () => { shot.diagram = ''; ui.changed(); ui.sync(shot, 'diagram'); } }, 'Remove') : null)),
+        sec(h('div', { class: 'row-gap' },
+          h('button', { class: 'btn small', disabled: index === 0, title: 'Move earlier', onclick: () => { seq.shots.splice(index, 1); seq.shots.splice(index - 1, 0, shot); ui.changed(); ui.full(); } }, '←'),
+          h('button', { class: 'btn small', disabled: index === seq.shots.length - 1, title: 'Move later', onclick: () => { seq.shots.splice(index, 1); seq.shots.splice(index + 1, 0, shot); ui.changed(); ui.full(); } }, '→'),
+          h('button', { class: 'btn small', onclick: () => sbPlay(d, shot.id) }, '▶ Play from here'),
+          h('button', { class: 'btn small danger', onclick: () => { seq.shots.splice(index, 1); state.sbSel = { doc: d.id, seq: seq.id }; ui.changed(); ui.full(); } }, 'Delete'))),
+      ];
+    }
+    const seq = sel.seq && d.sequences.find((s) => s.id === sel.seq);
+    if (seq) {
+      const si = d.sequences.indexOf(seq);
+      const scene = script && seq.sceneId ? SD.getScenes(script).find((s) => s.id === seq.sceneId) : null;
+      const secs = seq.shots.reduce((n, x) => n + (+x.duration || 0), 0);
+      return [
+        sec(h('div', { class: 'ins-kicker' }, seq.sceneId ? `Scene ${SD.storyboardNumbers(state.project, d).get(seq.id)}${script ? ' · from “' + script.name + '”' : ''}` : `Sequence ${si + 1}`),
+          seq.orphan ? h('p', { class: 'warn small' }, 'This scene is no longer in the script. The shots are kept.') : null,
+          h('textarea', { class: 'input', rows: 2, value: seq.title, placeholder: 'Name this sequence', oninput: (e) => { seq.title = e.target.value; if (seq.sceneId) seq.customTitle = true; ui.changed(); const t = document.querySelector(`[data-seqhead="${seq.id}"] .sb-seq-name`); if (t) t.textContent = seq.title || 'Untitled sequence'; } }),
+          scene && scene.el.synopsis ? h('p', { class: 'muted small' }, scene.el.synopsis) : null,
+          h('p', { class: 'muted small' }, `${seq.shots.length} shots` + (secs ? ` · ${SD.formatSeconds(secs)}` : '') + (scene ? ` · ${SD.eighths(scene.lines)} pages of script` : ''))),
+        sec(h('div', { class: 'row-gap' },
+          h('button', { class: 'btn small', onclick: () => { sbAddShot(d, seq); ui.full(); } }, '+ Shot'),
+          scene ? h('button', { class: 'btn small', title: 'One shot per action paragraph and speaker', onclick: () => sbDraft(d, seq, ui.full) }, 'Draft shots from the scene') : null,
+          scene ? h('button', { class: 'btn small', onclick: () => { state.docId = script.id; state.view = 'script'; renderDocList(); renderView(); requestAnimationFrame(() => editor.goTo(seq.sceneId)); } }, 'Go to scene') : null),
+        h('div', { class: 'row-gap' },
+          h('button', { class: 'btn small', disabled: si === 0, title: 'Move earlier', onclick: () => { d.sequences.splice(si, 1); d.sequences.splice(si - 1, 0, seq); ui.changed(); ui.full(); } }, '↑'),
+          h('button', { class: 'btn small', disabled: si === d.sequences.length - 1, title: 'Move later', onclick: () => { d.sequences.splice(si, 1); d.sequences.splice(si + 1, 0, seq); ui.changed(); ui.full(); } }, '↓'),
+          h('button', {
+            class: 'btn small danger', onclick: async () => {
+              if (seq.shots.length && !(await modal({ title: 'Delete this sequence?', body: `Its ${seq.shots.length} shots are deleted too.`, buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, primary: true, danger: true }] }))) return;
+              d.sequences.splice(si, 1); state.sbSel = { doc: d.id }; ui.changed(); ui.full();
+            },
+          }, 'Delete sequence'))),
+      ];
+    }
+    const st = SD.storyboardStats(d);
+    const s = d.settings;
+    return [
+      sec(h('div', { class: 'ins-kicker' }, 'Storyboard'),
+        h('p', { class: 'muted small' }, 'Click a shot to edit it. Each sequence follows one scene of your script; shots are numbered by scene (3A, 3B…).'),
+        h('p', { class: 'muted small' }, `${st.sequences} sequences · ${st.shots} shots · ${st.pictures} with pictures` + (st.seconds ? ` · ${SD.formatSeconds(st.seconds)}` : ''))),
+      sec(h('label', { class: 'lbl' }, 'Frame shape'),
+        h('select', { class: 'select', onchange: (e) => { d.ratio = e.target.value; ui.changed(); ui.full(); } }, Object.keys(SD.FRAME_RATIOS).map((r) => h('option', { value: r, selected: r === d.ratio }, r + (r === '16:9' ? ' (HD video)' : r === '2.39:1' ? ' (cinemascope)' : r === '9:16' ? ' (phone, vertical)' : r === '4:3' ? ' (classic TV)' : '')))),
+        h('label', { class: 'lbl' }, 'Card size'),
+        h('div', { class: 'seg' }, [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']].map(([k, l]) => h('button', { class: 'btn small' + (s.size === k ? ' primary' : ''), onclick: () => { s.size = k; ui.changed(); ui.full(); } }, l))),
+        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.details, onchange: (e) => { s.details = e.target.checked; ui.changed(); ui.full(); } }), ' Show shot type and camera on the cards')),
+      sec(h('label', { class: 'lbl' }, 'Script'),
+        h('p', { class: 'muted small' }, d.sourceId ? `Linked to “${script ? script.name : 'a deleted script'}”. Update to add sequences for new scenes; your shots are kept.` : 'Make a sequence for each scene of a script, or add sequences by hand.'),
+        h('button', { class: 'btn small', onclick: (e) => sbBuildMenu(e.currentTarget, d, ui.full) }, d.sourceId ? 'Update from script…' : 'Build from a script…')),
+    ];
+  }
+
+  // ---------- drawing pad ----------
+  async function sbDraw(d, shot, ui) {
+    const ratio = SD.FRAME_RATIOS[d.ratio];
+    const W = ratio >= 1 ? 1280 : Math.round(1280 * ratio), H = ratio >= 1 ? Math.round(1280 / ratio) : 1280;
+    const cv = h('canvas', { width: W, height: H, class: 'sb-draw-canvas' });
+    const ctx = cv.getContext('2d');
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (shot.drawing) await new Promise((res) => { const im = new Image(); im.onload = () => { ctx.drawImage(im, 0, 0, W, H); res(); }; im.onerror = res; im.src = shot.drawing; });
+    const tool = { kind: 'pen', color: '#1b1b1b', size: 6 };
+    const undo = [];
+    const snap = () => { undo.push(ctx.getImageData(0, 0, W, H)); if (undo.length > 40) undo.shift(); };
+    const bg = shot.image ? h('img', { src: shot.image, alt: '', class: 'sb-draw-bg' }) : null;
+    const stage = h('div', { class: 'sb-draw-stage', style: `aspect-ratio:${W}/${H}; width:min(100%, calc(62vh * ${W / H}))` }, bg, cv);
+
+    const toolBtns = {};
+    const setTool = (k) => { tool.kind = k; for (const [kk, b] of Object.entries(toolBtns)) b.classList.toggle('primary', kk === k); };
+    const colorBtns = [];
+    const COLORS = ['#1b1b1b', '#8b8d98', '#ffffff', '#d64541', '#e8a33d', '#2f9e66', '#2f6fd6', '#8e44ad'];
+    const bar = h('div', { class: 'sb-draw-bar' },
+      ['pen', 'arrow', 'box', 'eraser'].map((k) => (toolBtns[k] = h('button', { class: 'btn small', onclick: () => setTool(k) }, { pen: '✏️ Pen', arrow: '➜ Arrow', box: '▭ Box', eraser: '⌫ Eraser' }[k]))),
+      h('span', { class: 'sb-draw-colors' }, COLORS.map((c) => { const b = h('button', { class: 'swatch' + (c === tool.color ? ' on' : ''), style: `background:${c}`, 'aria-label': 'Colour ' + c, onclick: () => { tool.color = c; colorBtns.forEach((x) => x.classList.toggle('on', x === b)); if (tool.kind === 'eraser') setTool('pen'); } }); colorBtns.push(b); return b; })),
+      h('label', { class: 'sb-draw-size', title: 'Line thickness' }, 'Size', h('input', { type: 'range', min: 1, max: 40, value: tool.size, oninput: (e) => { tool.size = +e.target.value; } })),
+      h('button', { class: 'btn small', title: 'Undo (Ctrl+Z)', onclick: () => { if (undo.length) ctx.putImageData(undo.pop(), 0, 0); } }, '↶ Undo'),
+      h('button', { class: 'btn small', onclick: () => { snap(); ctx.clearRect(0, 0, W, H); } }, 'Clear'),
+      bg ? h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: true, onchange: (e) => { bg.hidden = !e.target.checked; } }), ' Show picture') : null);
+    setTool('pen');
+
+    const pt = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) }; };
+    const width = (e) => tool.size * (W / 640) * (e.pointerType === 'pen' && e.pressure > 0 ? 0.35 + e.pressure : 1);
+    let down = null;
+    const shape = (a, b) => {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = tool.color; ctx.fillStyle = tool.color; ctx.lineWidth = tool.size * (W / 640);
+      if (tool.kind === 'box') { ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y)); return; }
+      const ang = Math.atan2(b.y - a.y, b.x - a.x), head = Math.max(14, ctx.lineWidth * 3.2);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x - Math.cos(ang) * head * 0.6, b.y - Math.sin(ang) * head * 0.6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x - head * Math.cos(ang - 0.45), b.y - head * Math.sin(ang - 0.45));
+      ctx.lineTo(b.x - head * Math.cos(ang + 0.45), b.y - head * Math.sin(ang + 0.45));
+      ctx.closePath(); ctx.fill();
+    };
+    cv.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      cv.setPointerCapture(e.pointerId);
+      snap();
+      const p = pt(e);
+      down = { start: p, last: p, mid: p, base: tool.kind === 'arrow' || tool.kind === 'box' ? ctx.getImageData(0, 0, W, H) : null };
+      if (!down.base) {
+        ctx.globalCompositeOperation = tool.kind === 'eraser' ? 'destination-out' : 'source-over';
+        ctx.fillStyle = tool.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, width(e) / 2, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+    cv.addEventListener('pointermove', (e) => {
+      if (!down) return;
+      const p = pt(e);
+      if (down.base) { ctx.putImageData(down.base, 0, 0); shape(down.start, p); return; }
+      const mid = { x: (down.last.x + p.x) / 2, y: (down.last.y + p.y) / 2 };
+      ctx.globalCompositeOperation = tool.kind === 'eraser' ? 'destination-out' : 'source-over';
+      ctx.strokeStyle = tool.color;
+      ctx.lineWidth = tool.kind === 'eraser' ? tool.size * 3 * (W / 640) : width(e);
+      ctx.beginPath(); ctx.moveTo(down.mid.x, down.mid.y); ctx.quadraticCurveTo(down.last.x, down.last.y, mid.x, mid.y); ctx.stroke();
+      down.last = p; down.mid = mid;
+    });
+    const up = () => { down = null; ctx.globalCompositeOperation = 'source-over'; };
+    cv.addEventListener('pointerup', up);
+    cv.addEventListener('pointercancel', up);
+    const onKey = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && undo.length) { e.preventDefault(); ctx.putImageData(undo.pop(), 0, 0); } };
+    document.addEventListener('keydown', onKey);
+
+    const save = await modal({
+      title: 'Draw shot ' + (() => { const f = sbFind(d, shot.id); return f ? sbShotNo(d, f.seq, f.index) : ''; })(),
+      body: h('div', { class: 'sb-draw' }, bar, stage, h('p', { class: 'muted small' }, shot.image ? 'You draw on a layer over the picture. The picture itself is not changed.' : 'Tip: stick figures and arrows are enough. Arrows show where people or the camera move.')),
+      wide: true,
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Save drawing', value: true, primary: true }],
+    });
+    document.removeEventListener('keydown', onKey);
+    if (!save) return;
+    const px = ctx.getImageData(0, 0, W, H).data;
+    let blank = true;
+    for (let i = 3; i < px.length; i += 16) if (px[i]) { blank = false; break; }
+    shot.drawing = blank ? '' : cv.toDataURL('image/png');
+    ui.changed();
+    ui.sync(shot, 'drawing');
+  }
+
+  // ---------- play (animatic) ----------
+  function sbPlay(d, fromShotId) {
+    const nums = SD.storyboardNumbers(state.project, d);
+    const list = d.sequences.flatMap((seq) => seq.shots.map((shot, i) => ({ seq, shot, no: nums.get(seq.id) + SD.shotLetters(i) })));
+    if (!list.length) { toast('Add some shots first.'); return; }
+    let at = Math.max(0, list.findIndex((x) => x.shot.id === fromShotId));
+    let playing = false, timer = null, startedAt = 0;
+    const len = (x) => (+x.shot.duration || 3) * 1000;
+    const frame = h('div', { class: 'sb-play-frame', style: `--ratio:${SD.FRAME_RATIOS[d.ratio]}` });
+    const info = h('div', { class: 'sb-play-info' });
+    const counter = h('span', { class: 'sb-play-count' });
+    const bar = h('div', { class: 'sb-play-progress' }, h('div', {}));
+    const playBtn = h('button', { class: 'btn', onclick: () => toggle() }, '▶ Play');
+    const show = () => {
+      const x = list[at];
+      frame.replaceChildren(...sbFrameKids(x.shot, null), !x.shot.image && !x.shot.drawing ? h('div', { class: 'sb-play-text' }, x.shot.caption || '—') : null);
+      info.replaceChildren(
+        h('div', { class: 'sb-play-line' }, h('strong', {}, x.no), ' ', x.seq.title, x.shot.shotType || x.shot.move ? h('span', { class: 'sb-play-meta' }, sbMeta(x.shot)) : null),
+        x.shot.image || x.shot.drawing ? h('div', { class: 'sb-play-cap' }, x.shot.caption) : null,
+        x.shot.audio ? h('div', { class: 'sb-play-audio' }, '♪ ' + x.shot.audio) : null);
+      counter.textContent = `${at + 1} / ${list.length}`;
+    };
+    const tick = () => {
+      const t = (performance.now() - startedAt) / len(list[at]);
+      bar.firstChild.style.width = Math.min(100, t * 100) + '%';
+      if (t >= 1) {
+        if (at >= list.length - 1) { stop(); return; }
+        at++; startedAt = performance.now(); show();
+      }
+    };
+    const play = () => { if (at >= list.length - 1) at = 0; playing = true; startedAt = performance.now(); playBtn.textContent = '⏸ Pause'; show(); clearInterval(timer); timer = setInterval(tick, 40); };
+    const stop = () => { playing = false; clearInterval(timer); playBtn.textContent = '▶ Play'; };
+    const toggle = () => (playing ? stop() : play());
+    const go = (k) => { at = Math.max(0, Math.min(list.length - 1, k)); startedAt = performance.now(); bar.firstChild.style.width = '0%'; show(); };
+    const close = () => { stop(); document.removeEventListener('keydown', onKey, true); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); overlay.remove(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+      else if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); go(at + 1); }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(at - 1); }
+      else if (e.key === ' ') { e.preventDefault(); toggle(); }
+      else if (e.key === 'Home') { e.preventDefault(); go(0); }
+    };
+    const overlay = h('div', { class: 'sb-play', role: 'dialog', 'aria-label': 'Play storyboard' },
+      h('div', { class: 'sb-play-top' }, h('strong', {}, d.name), counter,
+        h('span', { class: 'push-right row-gap' },
+          h('button', { class: 'btn ghost', title: 'Full screen', onclick: () => { if (document.fullscreenElement) document.exitFullscreen(); else overlay.requestFullscreen && overlay.requestFullscreen().catch(() => {}); } }, '⛶'),
+          h('button', { class: 'btn ghost', title: 'Close (Esc)', onclick: close }, '✕'))),
+      h('div', { class: 'sb-play-stage', onclick: () => go(at + 1) }, frame),
+      info,
+      bar,
+      h('div', { class: 'sb-play-controls' },
+        h('button', { class: 'btn', title: 'Previous (←)', onclick: () => go(at - 1) }, '⏮'),
+        playBtn,
+        h('button', { class: 'btn', title: 'Next (→)', onclick: () => go(at + 1) }, '⏭'),
+        h('span', { class: 'muted small' }, 'Shots without a length show for 3 seconds · Space plays, arrows step, Esc closes')));
+    document.body.append(overlay);
+    document.addEventListener('keydown', onKey, true);
+    show();
+  }
+
+  // ---------- export / print ----------
+  function sbShotListCSV(d) {
+    const nums = SD.storyboardNumbers(state.project, d);
+    const q = (v) => { const s = String(v == null ? '' : v); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const rows = [['Scene', 'Shot', 'Sequence', 'Shot type', 'Camera', 'Lens', 'Seconds', 'Description', 'Sound', 'Notes']];
+    for (const seq of d.sequences) seq.shots.forEach((x, i) => rows.push([nums.get(seq.id), nums.get(seq.id) + SD.shotLetters(i), seq.title, SD.shotTypeLabel(x.shotType) || x.shotType, x.move, x.lens, x.duration || '', x.caption, x.audio, x.notes]));
+    return '﻿' + rows.map((r) => r.map(q).join(',')).join('\r\n');
+  }
+
+  async function printStoryboard(d) {
+    const cols = h('select', { class: 'select' }, [2, 3, 4].map((n) => h('option', { value: n, selected: n === 3 }, n + ' shots across')));
+    const what = h('select', { class: 'select' }, h('option', { value: 'board', selected: (state.sbTab || 'board') === 'board' }, 'Storyboard frames'), h('option', { value: 'list', selected: state.sbTab === 'list' }, 'Shot list (table)'));
+    const cDetails = h('input', { type: 'checkbox', checked: true });
+    const cSound = h('input', { type: 'checkbox', checked: true });
+    const cBreak = h('input', { type: 'checkbox', checked: false });
+    const body = h('div', { class: 'print-opts' },
+      h('label', { class: 'lbl' }, 'Print'), what,
+      h('label', { class: 'lbl' }, 'Layout'), cols,
+      h('label', { class: 'check' }, cDetails, ' Shot type, camera, lens and length'),
+      h('label', { class: 'check' }, cSound, ' Sound and notes'),
+      h('label', { class: 'check' }, cBreak, ' Start each sequence on a new page'));
+    const ok = await modal({ title: 'Print storyboard', body, buttons: [{ label: 'Cancel', value: false }, { label: 'Print / PDF', value: true, primary: true }] });
+    if (!ok) return;
+    const nums = SD.storyboardNumbers(state.project, d);
+    const root = $('#print-root');
+    root.className = 'print-board cols-' + cols.value + (cBreak.checked ? ' seq-break' : '');
+    root.style.setProperty('--ratio', SD.FRAME_RATIOS[d.ratio]);
+    const kids = [h('h1', {}, [state.project.title, d.name].filter(Boolean).join(' — '))];
+    if (what.value === 'list') {
+      kids.push(h('table', { class: 'pb-list' },
+        h('thead', {}, h('tr', {}, ['Shot', '', 'Description', 'Type', 'Camera', 'Lens', 'Sec', cSound.checked ? 'Sound / notes' : null].filter((x) => x != null).map((c) => h('th', {}, c)))),
+        h('tbody', {}, d.sequences.flatMap((seq) => [
+          h('tr', { class: 'pb-seqrow' }, h('td', { colspan: 8 }, (seq.sceneId ? 'Scene ' : 'Sequence ') + nums.get(seq.id) + ' — ' + (seq.title || 'Untitled'))),
+          ...seq.shots.map((x, i) => h('tr', {},
+            h('td', { class: 'pb-no' }, nums.get(seq.id) + SD.shotLetters(i)),
+            h('td', { class: 'pb-thumb' }, x.image || x.drawing ? h('div', { class: 'pb-frame' }, sbFrameKids(x, null)) : ''),
+            h('td', {}, x.caption), h('td', {}, x.shotType), h('td', {}, x.move), h('td', {}, x.lens), h('td', {}, x.duration || ''),
+            cSound.checked ? h('td', {}, [x.audio, x.notes].filter(Boolean).join(' — ')) : null)),
+        ]))));
+    } else {
+      for (const seq of d.sequences) {
+        if (!seq.shots.length) continue;
+        kids.push(h('section', { class: 'pb-seq' },
+          h('h2', {}, (seq.sceneId ? 'Scene ' : 'Sequence ') + nums.get(seq.id) + ' — ' + (seq.title || 'Untitled')),
+          h('div', { class: 'pb-grid' }, seq.shots.map((x, i) => h('div', { class: 'pb-card' },
+            h('div', { class: 'pb-frame' }, sbFrameKids(x, null)),
+            h('div', { class: 'pb-head' }, h('strong', {}, nums.get(seq.id) + SD.shotLetters(i)), cDetails.checked ? ' ' + sbMeta(x) : ''),
+            x.caption ? h('div', { class: 'pb-cap' }, x.caption) : null,
+            cSound.checked && x.audio ? h('div', { class: 'pb-small' }, '♪ ' + x.audio) : null,
+            cSound.checked && x.notes ? h('div', { class: 'pb-small' }, x.notes) : null)))));
+      }
+    }
+    root.replaceChildren(...kids);
+    const decoded = Promise.all([...root.querySelectorAll('img')].map((im) => (im.decode ? im.decode().catch(() => {}) : null)));
+    await Promise.race([decoded, new Promise((r) => setTimeout(r, 1500))]);
+    const pageStyle = $('#page-size-style');
+    const before = pageStyle.textContent;
+    pageStyle.textContent = `@page { size: ${state.project.settings.pageSize === 'a4' ? 'A4' : 'letter'} landscape; margin: 0.45in; }`;
+    const docTitle = document.title;
+    document.title = safeName((state.project.title || 'Storyboard') + ' - ' + d.name);
+    window.addEventListener('afterprint', () => { pageStyle.textContent = before; document.title = docTitle; }, { once: true });
+    window.print();
+  }
+
+  // ---------- Notes (rich text) ----------
+  function renderNote(root, d) {
+    if (typeof d.html !== 'string') d.html = SD.textToHtml(d.text);
+    const ed = h('div', { class: 'note-rich', contentEditable: 'true', spellcheck: true, 'data-placeholder': 'Ideas, outlines, research, character bios…' });
+    ed.innerHTML = SD.sanitizeHtml(d.html);
+    const save = () => {
+      d.html = ed.innerHTML;
+      d.text = ed.innerText.replace(/\n{3,}/g, '\n\n').trim();
+      ed.classList.toggle('is-empty', !d.text);
+      markDirty();
+      renderStatusSoon();
+    };
+    ed.classList.toggle('is-empty', !ed.textContent.trim());
+    ed.addEventListener('input', save);
+    ed.addEventListener('paste', (e) => {
+      const html = e.clipboardData.getData('text/html');
+      const text = e.clipboardData.getData('text/plain');
+      if (!html && !text) return;
+      e.preventDefault();
+      document.execCommand('insertHTML', false, html ? SD.sanitizeHtml(html) : SD.textToHtml(text) || SD.escapeHtml(text));
+    });
+    ed.addEventListener('keydown', (e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      if (k === 'b' || k === 'i' || k === 'u') { e.preventDefault(); noteCmd({ b: 'bold', i: 'italic', u: 'underline' }[k]); }
+    });
+    root.append(h('div', { class: 'note-wrap' }, h('div', { class: 'note-page' }, ed)));
+    setTimeout(() => ed.focus(), 0);
+  }
+
+  function noteCmd(cmd, arg) {
+    const ed = $('.note-rich');
+    if (!ed) return;
+    if (!ed.contains(document.getSelection().anchorNode)) ed.focus();
+    document.execCommand(cmd, false, arg);
+    ed.dispatchEvent(new Event('input'));
+  }
+
+  function noteToolbar(d) {
+    const b = (label, title, run, cls = '') => h('button', { class: 'btn ghost small note-btn ' + cls, title, onmousedown: (e) => e.preventDefault(), onclick: run }, label);
+    return [
+      h('div', { class: 'tb-group' },
+        b('H1', 'Big heading', () => noteCmd('formatBlock', '<h1>')),
+        b('H2', 'Heading', () => noteCmd('formatBlock', '<h2>')),
+        b('H3', 'Small heading', () => noteCmd('formatBlock', '<h3>')),
+        b('¶', 'Normal text', () => noteCmd('formatBlock', '<p>'))),
+      h('div', { class: 'tb-group' },
+        b('B', 'Bold (Ctrl+B)', () => noteCmd('bold'), 'fb'),
+        b('I', 'Italic (Ctrl+I)', () => noteCmd('italic'), 'fi'),
+        b('U', 'Underline (Ctrl+U)', () => noteCmd('underline'), 'fu'),
+        b('S', 'Strike through', () => noteCmd('strikeThrough'), 'fs')),
+      h('div', { class: 'tb-group' },
+        b('• List', 'Bulleted list', () => noteCmd('insertUnorderedList')),
+        b('1. List', 'Numbered list', () => noteCmd('insertOrderedList')),
+        b('❝ Quote', 'Quote', () => noteCmd('formatBlock', '<blockquote>')),
+        b('―', 'Divider line', () => noteCmd('insertHorizontalRule')),
+        b('✕ Format', 'Remove formatting from the selection', () => { noteCmd('removeFormat'); noteCmd('formatBlock', '<p>'); })),
+      h('div', { class: 'tb-group' },
+        h('button', { class: 'btn ghost small', title: 'Print or save as PDF', onclick: () => printNote(d) }, 'Print')),
+    ];
+  }
+
+  function printNote(d) {
+    const body = h('div', { class: 'note-print' });
+    body.innerHTML = SD.sanitizeHtml(d.html || SD.textToHtml(d.text));
+    printNodes('print-note', [h('h1', { class: 'note-print-title' }, d.name), body], { title: d.name, margin: '0.9in' });
   }
 
   // ---------- Master catalog ----------
@@ -1602,6 +2420,12 @@
       bar.textContent = `Storyline  ·  ${d.rows.length} characters  ·  ${d.beats.length} moments  ·  ${evs} events`;
       return;
     }
+    if (SD.KINDS[d.kind]) { bar.textContent = SD.KINDS[d.kind].status ? SD.KINDS[d.kind].status(d) : SD.KINDS[d.kind].label; return; }
+    if (d.kind === 'storyboard') {
+      const st = SD.storyboardStats(d);
+      bar.textContent = `Storyboard  ·  ${st.sequences} sequences  ·  ${st.shots} shots  ·  ${st.pictures} with pictures` + (st.seconds ? `  ·  running time ${SD.formatSeconds(st.seconds)}` : '');
+      return;
+    }
     const est = SD.estimate(d);
     const scenes = d.elements.filter((e) => e.type === SD.SCRIPT_TYPES[d.scriptType].sceneType).length;
     const parts = [SD.SCRIPT_TYPES[d.scriptType].label];
@@ -1744,7 +2568,7 @@
 
   function projectHasContent() {
     const p = state.project;
-    return p.catalog.length > 0 || p.documents.some((d) => (d.kind === 'note' ? d.text.trim() : d.kind === 'storyline' ? d.beats.length : d.elements.some((e) => e.text.trim())));
+    return p.catalog.length > 0 || p.documents.some((d) => (d.kind === 'note' ? d.text.trim() : d.kind === 'storyline' ? d.beats.length : d.kind === 'storyboard' ? d.sequences.length : SD.KINDS[d.kind] ? SD.KINDS[d.kind].hasContent(d) : d.elements.some((e) => e.text.trim())));
   }
 
   async function importDocs(docs, title, catalog = []) {
@@ -1807,6 +2631,11 @@
   // ---------- printing ----------
   function printScript() {
     syncEditor();
+    const cur = currentDoc();
+    if (cur && cur.kind === 'storyboard') { printStoryboard(cur); return; }
+    if (cur && cur.kind === 'storyline') { printStoryline(cur); return; }
+    if (cur && SD.KINDS[cur.kind]) { if (SD.KINDS[cur.kind].print) SD.KINDS[cur.kind].print(cur); else toast('This document has nothing to print.'); return; }
+    if (cur && cur.kind === 'note') { printNote(cur); return; }
     const d = scriptForExport();
     if (!d) return;
     const root = $('#print-root');
@@ -1885,7 +2714,7 @@
       h('p', { class: 'muted small' }, 'Your open project is also kept in this browser so a refresh does not lose work. That copy is not a backup — save the project file.'),
       h('button', {
         class: 'btn danger small',
-        onclick: () => { store.del(KEYS.autosave); toast('Browser copy cleared. It will be saved again on your next change.'); },
+        onclick: () => { store.del(KEYS.autosave); idb.del(KEYS.autosave).catch(() => {}); toast('Browser copy cleared. It will be saved again on your next change.'); },
       }, 'Clear browser copy'));
     modal({ title: 'Settings', body, buttons: [{ label: 'Done', value: true, primary: true }] });
   }
@@ -1909,6 +2738,8 @@
           row('Ctrl+Z / Ctrl+Y', 'Undo / redo'),
           row('Ctrl+S', 'Save project file'),
           row('Ctrl+O', 'Open a project or import a script'),
+          row('Ctrl+F', 'Find in the script (Ctrl+H: find & replace)'),
+          row('Ctrl+Alt+M', 'Comment on the selected words'),
           row('Ctrl+P', 'Print / save as PDF')),
         h('h3', {}, 'Shortcuts while typing'),
         h('ul', {},
@@ -2005,12 +2836,16 @@
       'export-txt': () => exportAs('txt'),
       settings: openSettings,
       help: openHelp,
+      goals: openGoals,
       'add-screenplay': () => addDoc('screenplay'),
       'add-stageplay': () => addDoc('stageplay'),
       'add-audioplay': () => addDoc('audioplay'),
       'add-comic': () => addDoc('comic'),
+      'add-av': () => addDoc('av'),
       'add-note': () => addDoc('note'),
       'add-storyline': () => addDoc('storyline'),
+      'add-storyboard': () => addDoc('storyboard'),
+      ...Object.fromEntries(Object.keys(SD.KINDS).map((k) => ['add-' + k, () => addDoc(k)])),
       'toggle-sidebar': () => document.body.classList.toggle('show-sidebar'),
     };
     document.addEventListener('click', (e) => {
@@ -2055,6 +2890,10 @@
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) { if (e.key === 'Escape') closeMenus(); return; }
       const k = e.key.toLowerCase();
+      const inScript = currentDoc() && currentDoc().kind === 'script';
+      if (k === 'f' && inScript && !e.shiftKey) { e.preventDefault(); openFind(false); return; }
+      if (k === 'h' && inScript) { e.preventDefault(); openFind(true); return; }
+      if (k === 'm' && e.altKey && inScript) { e.preventDefault(); addComment(); return; }
       if (k === 's') { e.preventDefault(); saveProject(e.shiftKey); }
       else if (k === 'o') { e.preventDefault(); openDialog(); }
       else if (k === 'p') { e.preventDefault(); printScript(); }
@@ -2072,6 +2911,915 @@
       if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
     });
   }
+
+  // =====================================================================
+  // highlights (CSS Custom Highlight API — no extra markup in the editor)
+  // =====================================================================
+  const HL = typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight !== 'undefined';
+  function setHighlight(name, ranges) {
+    if (!HL) return;
+    if (ranges.length) CSS.highlights.set(name, new Highlight(...ranges)); else CSS.highlights.delete(name);
+  }
+  const blockById = (id) => editor.root.querySelector(`[data-id="${CSS.escape(id)}"]`);
+  const refreshHighlights = debounce(() => {
+    const showing = editor.doc && !$('#editor-wrap').hidden;
+    // comments
+    const cr = [];
+    if (showing) {
+      for (const e of editor.doc.elements) {
+        for (const c of e.comments || []) {
+          if (c.done || !c.quote) continue;
+          const b = blockById(e.id);
+          if (!b) continue;
+          const pos = commentPos(e, c);
+          const r = pos && editor.rangeIn(b, pos[0], pos[1]);
+          if (r) cr.push(r);
+        }
+      }
+    }
+    setHighlight('sd-comment', cr);
+    // find
+    const fr = [], cur = [];
+    if (showing && finder.open) {
+      finder.matches.forEach((m, i) => {
+        if (m.docId !== editor.doc.id) return;
+        const b = blockById(m.elId);
+        const r = b && editor.rangeIn(b, m.start, m.end);
+        if (r) (i === finder.index ? cur : fr).push(r);
+      });
+    }
+    setHighlight('sd-find', fr);
+    setHighlight('sd-find-cur', cur);
+  }, 50);
+
+  // =====================================================================
+  // comments — attached to a script line, optionally to words in it
+  // =====================================================================
+  function commentPos(e, c) {
+    if (!c.quote) return null;
+    if (e.text.slice(c.start, c.end) === c.quote) return [c.start, c.end];
+    const i = e.text.indexOf(c.quote);
+    return i >= 0 ? [i, i + c.quote.length] : null;
+  }
+  const commentCount = (d) => d.elements.reduce((n, e) => n + (e.comments || []).filter((c) => !c.done).length, 0);
+  const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (e) { return ''; } };
+
+  async function addComment() {
+    const d = currentDoc();
+    if (!d || d.kind !== 'script') { toast('Open a script to add a comment.'); return; }
+    if (state.view !== 'script') setView('script');
+    const info = editor.selectionInfo();
+    if (!info) { toast('Click in the script where the comment belongs.'); return; }
+    editor.sync();
+    const el = d.elements.find((e) => e.id === info.block.dataset.id);
+    if (!el) return;
+    const ta = h('textarea', { class: 'input', rows: 4, placeholder: 'Your comment (Ctrl+Enter to add)' });
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ta.closest('.modal').querySelector('.btn.primary').click(); } });
+    setTimeout(() => ta.focus(), 30);
+    const v = await modal({
+      title: 'Add a comment',
+      body: h('div', {}, info.text ? h('blockquote', { class: 'cm-quote' }, info.text) : h('p', { class: 'muted small' }, 'On the line “' + (el.text.slice(0, 90) || 'empty line') + (el.text.length > 90 ? '…' : '') + '”. Select words first to comment on them.'), ta),
+      buttons: [{ label: 'Cancel', value: null }, { label: 'Add comment', value: () => ta.value, primary: true }],
+    });
+    if (!v || !v.trim()) return;
+    editor.pushUndo(editor.snapshot());
+    (el.comments = el.comments || []).push({ id: SD.uid(), text: v.trim(), quote: info.text, start: info.start, end: info.end, created: new Date().toISOString(), done: false });
+    commentsChanged();
+  }
+
+  function commentsChanged() {
+    editor.refreshMarks();
+    editor.refreshState();
+    markDirty();
+    renderInspector();
+    renderToolbar();
+  }
+
+  function goComment(d, el, c) {
+    if (state.docId !== d.id) { syncEditor(); state.docId = d.id; state.editorStale = true; renderDocList(); }
+    if (state.view !== 'script') state.view = 'script';
+    renderView();
+    const pos = commentPos(el, c);
+    requestAnimationFrame(() => editor.selectRange(el.id, pos ? pos[0] : 0, pos ? pos[1] : 0));
+    setTimeout(() => { if (!editor.root.contains(getSelection().anchorNode)) editor.selectRange(el.id, pos ? pos[0] : 0, pos ? pos[1] : 0); }, 80);
+  }
+
+  function commentCard(d, el, c, opts = {}) {
+    return h('div', { class: 'cm-card' + (c.done ? ' done' : '') + (opts.on ? ' on' : '') },
+      h('button', { class: 'cm-where', title: 'Show in the script', onclick: () => { if (opts.close) opts.close(); goComment(d, el, c); } },
+        c.quote ? '“' + c.quote.slice(0, 80) + (c.quote.length > 80 ? '…' : '') + '”' : (el.text.slice(0, 60) || '(empty line)') + (el.text.length > 60 ? '…' : '')),
+      h('textarea', { class: 'input cm-text', rows: 2, value: c.text, oninput: (e) => { c.text = e.target.value; editor.refreshState(); markDirty(); } }),
+      h('div', { class: 'cm-foot' },
+        h('span', { class: 'muted small' }, fmtDate(c.created) + (c.done ? ' · resolved' : '')),
+        h('span', { class: 'push-right' },
+          h('button', { class: 'btn ghost small', onclick: () => { c.done = !c.done; commentsChanged(); if (opts.refresh) opts.refresh(); } }, c.done ? 'Reopen' : '✓ Resolve'),
+          h('button', { class: 'btn ghost small danger', onclick: () => { editor.pushUndo(editor.snapshot()); el.comments = el.comments.filter((x) => x !== c); if (!el.comments.length) delete el.comments; commentsChanged(); if (opts.refresh) opts.refresh(); } }, 'Delete'))));
+  }
+
+  // Comments of one scene, for the scene panel.
+  function sceneCommentsSection(d, sc) {
+    syncEditor();
+    const curId = editor.curBlock && editor.curBlock.dataset.id;
+    const items = [];
+    for (let i = sc.start; i < sc.end; i++) for (const c of d.elements[i].comments || []) items.push([d.elements[i], c]);
+    const open = items.filter(([, c]) => !c.done);
+    return h('div', { class: 'ins-section' },
+      h('div', { class: 'cm-head-row' }, h('label', { class: 'lbl' }, `Comments${open.length ? ' (' + open.length + ')' : ''}`),
+        h('button', { class: 'btn ghost small', title: 'Comment on the selected words or the current line (Ctrl+Alt+M)', onmousedown: (e) => e.preventDefault(), onclick: addComment }, '+ Comment')),
+      open.length ? open.map(([el, c]) => commentCard(d, el, c, { on: el.id === curId })) : h('p', { class: 'muted small' }, 'Select words in the script and add a comment, for notes to yourself or from a reader.'),
+      items.length > open.length ? h('p', { class: 'muted small' }, `${items.length - open.length} resolved — see 💬 in the toolbar.`) : null);
+  }
+
+  async function showAllComments(d) {
+    syncEditor();
+    let showDone = false;
+    const list = h('div', { class: 'cm-list' });
+    let closeModal = null;
+    const draw = () => {
+      const scenes = SD.getScenes(d);
+      const sceneAt = (i) => { let s = null; for (const x of scenes) if (x.start <= i) s = x; return s; };
+      const rows = [];
+      d.elements.forEach((el, i) => (el.comments || []).forEach((c) => { if (showDone || !c.done) rows.push([el, c, sceneAt(i)]); }));
+      list.replaceChildren(...(rows.length ? rows.map(([el, c, sc]) => h('div', {},
+        h('div', { class: 'cm-scene' }, sc ? `Scene ${sc.number} · ${sc.el.text.toUpperCase().slice(0, 50)}` : 'Before the first scene'),
+        commentCard(d, el, c, { close: () => closeModal && closeModal(), refresh: draw }))) : [h('p', { class: 'muted' }, showDone ? 'No comments in this script.' : 'No open comments. Select words in the script and press 💬 Comment.')]));
+    };
+    draw();
+    const p = modal({
+      title: 'Comments in “' + d.name + '”', wide: true,
+      body: h('div', {}, h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (e) => { showDone = e.target.checked; draw(); } }), ' Show resolved comments'), list),
+      buttons: [{ label: 'Close', value: true, primary: true }],
+    });
+    closeModal = () => { const b = document.querySelector('.modal-backdrop:last-child .modal-actions .btn'); if (b) b.click(); };
+    await p;
+  }
+
+  // =====================================================================
+  // find & replace
+  // =====================================================================
+  const finder = { open: false, q: '', rep: '', caseSensitive: false, word: false, scope: 'doc', matches: [], index: -1, el: null };
+
+  function buildFindBar() {
+    const q = h('input', {
+      class: 'input fb-q', placeholder: 'Find', 'aria-label': 'Find',
+      oninput: (e) => { finder.q = e.target.value; finder.index = -1; runFind(); },
+      onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); } else if (e.key === 'Escape') { e.preventDefault(); closeFind(true); } },
+    });
+    const r = h('input', {
+      class: 'input fb-r', placeholder: 'Replace with', 'aria-label': 'Replace with',
+      oninput: (e) => { finder.rep = e.target.value; },
+      onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); replaceOne(); } else if (e.key === 'Escape') { e.preventDefault(); closeFind(true); } },
+    });
+    const opt = (label, key, title) => h('button', { class: 'btn ghost small fb-opt', title, 'aria-pressed': 'false', onclick: (e) => { finder[key] = !finder[key]; e.currentTarget.classList.toggle('on', finder[key]); e.currentTarget.setAttribute('aria-pressed', String(finder[key])); finder.index = -1; runFind(); } }, label);
+    finder.count = h('span', { class: 'fb-count' });
+    finder.qEl = q; finder.rEl = r;
+    finder.el = h('div', { class: 'find-bar', role: 'search', hidden: true },
+      h('div', { class: 'fb-row' },
+        h('button', { class: 'icon-btn fb-toggle', title: 'Show / hide replace', 'aria-label': 'Show replace', onclick: () => finder.el.classList.toggle('with-replace') }, '⇅'),
+        q, finder.count,
+        opt('Aa', 'caseSensitive', 'Match case'), opt('W', 'word', 'Whole words only'),
+        h('select', { class: 'select small fb-scope', title: 'Where to search', onchange: (e) => { finder.scope = e.target.value; finder.index = -1; runFind(); } },
+          h('option', { value: 'doc' }, 'This script'), h('option', { value: 'all' }, 'All scripts')),
+        h('button', { class: 'icon-btn', title: 'Previous (Shift+Enter)', 'aria-label': 'Previous match', onclick: () => stepFind(-1) }, '↑'),
+        h('button', { class: 'icon-btn', title: 'Next (Enter)', 'aria-label': 'Next match', onclick: () => stepFind(1) }, '↓'),
+        h('button', { class: 'icon-btn', title: 'Close (Esc)', 'aria-label': 'Close find', onclick: () => closeFind(true) }, '✕')),
+      h('div', { class: 'fb-row fb-rep' }, r,
+        h('button', { class: 'btn small', onclick: replaceOne }, 'Replace'),
+        h('button', { class: 'btn small', onclick: replaceAll }, 'Replace all'),
+        h('button', { class: 'btn ghost small', title: 'Rename a character in cues, dialogue, action, the catalog and the storyline', onclick: () => renameCharacter() }, 'Rename character…')));
+    $('.workspace').append(finder.el);
+  }
+
+  function openFind(withReplace) {
+    const d = currentDoc();
+    if (!d || d.kind !== 'script') { toast('Open a script to search it.'); return; }
+    if (state.view !== 'script') setView('script');
+    if (!finder.el) buildFindBar();
+    const sel = editor.selectionInfo();
+    if (sel && sel.text && sel.text.length < 80) { finder.q = sel.text; finder.qEl.value = sel.text; }
+    finder.el.hidden = false;
+    finder.open = true;
+    if (withReplace) finder.el.classList.add('with-replace');
+    finder.index = -1;
+    runFind();
+    finder.qEl.focus();
+    finder.qEl.select();
+  }
+
+  function closeFind(selectCurrent) {
+    if (!finder.el) return;
+    const m = finder.matches[finder.index];
+    finder.el.hidden = true;
+    finder.open = false;
+    refreshHighlights();
+    if (selectCurrent && m && editor.doc && m.docId === editor.doc.id) editor.selectRange(m.elId, m.start, m.end);
+  }
+
+  function findRegex(q) {
+    if (!q) return null;
+    let src = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (finder.word) src = '(?<![\\p{L}\\p{N}_])' + src + '(?![\\p{L}\\p{N}_])';
+    return new RegExp(src, 'gu' + (finder.caseSensitive ? '' : 'i'));
+  }
+
+  function runFind() {
+    if (!finder.open) return;
+    syncEditor();
+    const re = findRegex(finder.q);
+    const cur = currentDoc();
+    const docs = finder.scope === 'all' ? state.project.documents.filter((x) => x.kind === 'script') : cur && cur.kind === 'script' ? [cur] : [];
+    finder.matches = [];
+    if (re) {
+      for (const doc of docs) {
+        doc.elements.forEach((el, i) => {
+          re.lastIndex = 0;
+          let m;
+          while ((m = re.exec(el.text))) {
+            if (!m[0].length) { re.lastIndex++; continue; }
+            finder.matches.push({ docId: doc.id, elId: el.id, elIndex: i, start: m.index, end: m.index + m[0].length });
+          }
+        });
+      }
+    }
+    if (finder.index < 0 || finder.index >= finder.matches.length) {
+      const k = finder.matches.findIndex((m) => cur && m.docId === cur.id && m.elIndex >= state.caretIndex);
+      finder.index = finder.matches.length ? Math.max(0, k) : -1;
+    }
+    updateFindUI();
+    refreshHighlights();
+  }
+
+  function updateFindUI() {
+    const n = finder.matches.length;
+    finder.count.textContent = !finder.q ? '' : n ? `${finder.index + 1} of ${n}` : 'No matches';
+    finder.count.classList.toggle('none', !!finder.q && !n);
+  }
+
+  function stepFind(dir) {
+    const n = finder.matches.length;
+    if (!n) return;
+    finder.index = (finder.index + dir + n) % n;
+    showMatch();
+  }
+
+  function showMatch() {
+    const m = finder.matches[finder.index];
+    if (!m) return;
+    if (state.docId !== m.docId) {
+      syncEditor();
+      state.docId = m.docId; state.view = 'script'; state.editorStale = true;
+      renderDocList(); renderView();
+    }
+    const b = blockById(m.elId);
+    if (b) b.scrollIntoView({ block: 'center' });
+    updateFindUI();
+    refreshHighlights();
+  }
+
+  // Replace a list of matches (from any script), with undo for the open one.
+  function applyReplacements(list, textFor) {
+    syncEditor();
+    const byDoc = new Map();
+    for (const m of list) { if (!byDoc.has(m.docId)) byDoc.set(m.docId, []); byDoc.get(m.docId).push(m); }
+    for (const [docId, ms] of byDoc) {
+      const doc = state.project.documents.find((x) => x.id === docId);
+      if (!doc) continue;
+      const open = editor.doc === doc && !state.editorStale;
+      if (open) editor.pushUndo(editor.snapshot());
+      const els = new Map(doc.elements.map((e) => [e.id, e]));
+      ms.sort((a, b) => (a.elId === b.elId ? b.start - a.start : 0));
+      for (const m of ms) {
+        const e = els.get(m.elId);
+        if (!e) continue;
+        const old = e.text.slice(m.start, m.end);
+        e.text = e.text.slice(0, m.start) + textFor(old) + e.text.slice(m.end);
+      }
+      if (open) { editor.render(); editor.lastState = editor.snapshot(); }
+      else if (editor.doc === doc) state.editorStale = true;
+    }
+    markDirty();
+    refreshDerived();
+  }
+
+  function replaceOne() {
+    const m = finder.matches[finder.index];
+    if (!m) return;
+    applyReplacements([m], () => finder.rep);
+    runFind();
+    if (finder.matches.length) showMatch();
+  }
+
+  function replaceAll() {
+    const n = finder.matches.length;
+    if (!n) return;
+    applyReplacements(finder.matches.slice(), () => finder.rep);
+    finder.index = -1;
+    runFind();
+    toast(`Replaced ${n} match${n === 1 ? '' : 'es'}. Undo (Ctrl+Z) works in the open script.`);
+  }
+
+  // Rename a character in cues, mentions, the catalog and the storyline.
+  async function renameCharacter(fromName) {
+    syncEditor();
+    const p = state.project;
+    const names = new Set();
+    for (const d of p.documents) if (d.kind === 'script') for (const e of d.elements) if (e.type === 'character') { const n = SD.charName(e.text); if (n) names.add(n); }
+    for (const c of p.catalog) if (c.category === 'character' && c.name.trim()) names.add(c.name.trim().toUpperCase());
+    if (!names.size) { toast('There are no characters yet.'); return; }
+    const from = h('select', { class: 'select' }, [...names].sort().map((n) => h('option', { value: n, selected: n === fromName }, n)));
+    const to = h('input', { class: 'input', placeholder: 'New name' });
+    const cb = (label, on = true) => { const i = h('input', { type: 'checkbox', checked: on }); return [i, h('label', { class: 'check' }, i, ' ' + label)]; };
+    const [cCues, lCues] = cb('Character cues (the name above dialogue)');
+    const [cText, lText] = cb('Mentions in action, dialogue and scene headings (whole word, keeps CAPITALS / Capitals)');
+    const [cCat, lCat] = cb('The character’s catalog profile');
+    const [cMore, lMore] = cb('Storyline lines, storyboard captions and beat board cards');
+    const preview = h('p', { class: 'muted small' });
+    const plan = (dry) => renameCharacterRun(from.value, to.value.trim(), { cues: cCues.checked, text: cText.checked, catalog: cCat.checked, more: cMore.checked }, dry);
+    const upd = () => { const n = to.value.trim() ? plan(true) : null; preview.textContent = n ? `${n.cues} cues · ${n.text} mentions · ${n.catalog} catalog profile · ${n.more} in other documents` : 'Type the new name.'; };
+    [from, to, cCues, cText, cCat, cMore].forEach((x) => x.addEventListener('input', upd));
+    [cCues, cText, cCat, cMore].forEach((x) => x.addEventListener('change', upd));
+    upd();
+    const ok = await modal({
+      title: 'Rename a character everywhere',
+      body: h('div', {}, h('label', { class: 'lbl' }, 'Character'), from, h('label', { class: 'lbl' }, 'New name'), to, lCues, lText, lCat, lMore, preview),
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Rename', value: true, primary: true }],
+    });
+    if (!ok || !to.value.trim()) return;
+    const n = plan(false);
+    runFind();
+    renderView();
+    toast(`Renamed: ${n.cues} cues, ${n.text} mentions${n.catalog ? ', the catalog profile' : ''}${n.more ? ', ' + n.more + ' elsewhere' : ''}.`);
+  }
+
+  function renameCharacterRun(fromU, toName, opt, dry) {
+    const p = state.project;
+    const toU = toName.toUpperCase();
+    const title = toName.replace(/\S+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+    const re = new RegExp('(?<![\\p{L}\\p{N}_])' + fromU.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\p{N}_])', 'giu');
+    const cased = (m) => (m === m.toUpperCase() ? toU : m[0] === m[0].toUpperCase() ? title : toName.toLowerCase());
+    const n = { cues: 0, text: 0, catalog: 0, more: 0 };
+    const replaceIn = (s, count) => s.replace(re, (m) => { n[count]++; return cased(m); });
+    const list = [];
+    for (const d of p.documents) {
+      if (d.kind !== 'script') continue;
+      d.elements.forEach((e) => {
+        if (e.type === 'character') {
+          if (opt.cues && SD.charName(e.text) === fromU) {
+            const i = e.text.toUpperCase().indexOf(fromU);
+            n.cues++;
+            list.push({ docId: d.id, elId: e.id, start: i, end: i + fromU.length, to: toU });
+          }
+        } else if (opt.text) {
+          re.lastIndex = 0;
+          let m;
+          while ((m = re.exec(e.text))) { n.text++; list.push({ docId: d.id, elId: e.id, start: m.index, end: m.index + m[0].length, to: cased(m[0]) }); }
+        }
+      });
+    }
+    if (opt.catalog) for (const c of p.catalog) if (c.category === 'character' && c.name.trim().toUpperCase() === fromU) { n.catalog++; if (!dry) c.name = c.name === c.name.toUpperCase() ? toU : title; }
+    if (opt.more) {
+      for (const d of p.documents) {
+        if (d.kind === 'storyline') for (const r of d.rows) if (!r.charId && (r.name || '').toUpperCase() === fromU) { n.more++; if (!dry) r.name = toU; }
+        if (d.kind === 'storyboard') for (const sq of d.sequences) for (const x of sq.shots) for (const k of ['caption', 'audio', 'notes']) { const before = n.more; const v = replaceIn(x[k] || '', 'more'); if (!dry && n.more !== before) x[k] = v; }
+        if (d.kind === 'beatboard') for (const b of d.beats) for (const c of b.cards) if (c.text) { const before = n.more; const v = replaceIn(c.text, 'more'); if (!dry && n.more !== before) c.text = v; }
+      }
+    }
+    if (!dry && list.length) {
+      syncEditor();
+      for (const [docId, ms] of groupBy(list, (m) => m.docId)) {
+        const doc = p.documents.find((x) => x.id === docId);
+        const open = editor.doc === doc && !state.editorStale;
+        if (open) editor.pushUndo(editor.snapshot());
+        const els = new Map(doc.elements.map((e) => [e.id, e]));
+        ms.sort((a, b) => b.start - a.start);
+        for (const m of ms) { const e = els.get(m.elId); e.text = e.text.slice(0, m.start) + m.to + e.text.slice(m.end); }
+        if (open) { editor.render(); editor.lastState = editor.snapshot(); }
+        else if (editor.doc === doc) state.editorStale = true;
+      }
+    }
+    if (!dry) markDirty();
+    return n;
+  }
+  const groupBy = (arr, key) => { const m = new Map(); for (const x of arr) { const k = key(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); } return m; };
+
+  // =====================================================================
+  // table read (speech synthesis)
+  // =====================================================================
+  const reader = { on: false, paused: false, docId: null, queue: [], at: 0, speaker: null, bar: null };
+  const speechOK = () => 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+  const readSettings = () => {
+    const s = state.project.settings;
+    const t = (s.tableRead = s.tableRead && typeof s.tableRead === 'object' ? s.tableRead : {});
+    for (const [k, v] of Object.entries({ voices: {}, narrator: '', rate: 1, headings: true, action: true, parens: false, names: false })) if (t[k] == null) t[k] = v;
+    return t;
+  };
+  const voiceList = () => (speechOK() ? speechSynthesis.getVoices() : []);
+  const hashOf = (s) => { let x = 7; for (const c of s) x = (x * 31 + c.charCodeAt(0)) >>> 0; return x; };
+
+  // a voice and a pitch for each character, so they sound different even with few voices
+  function voiceFor(name) {
+    const rs = readSettings();
+    const all = voiceList();
+    const lang = (document.documentElement.lang || 'en').slice(0, 2);
+    const pool = all.filter((v) => v.lang && v.lang.toLowerCase().startsWith(lang));
+    const list = pool.length ? pool : all;
+    const chosen = name ? rs.voices[name] : rs.narrator;
+    let v = all.find((x) => x.voiceURI === chosen) || null;
+    if (!v && list.length) v = name ? list[(hashOf(name) % Math.max(1, list.length - 1)) + (list.length > 1 ? 1 : 0)] || list[0] : list[0];
+    const pitch = name ? 0.8 + (hashOf(name + '#') % 9) * 0.06 : 1;
+    return { voice: v, pitch };
+  }
+
+  function spokenScene(t) {
+    return t.replace(/^\s*INT\.\/EXT\.?\s*/i, 'Interior, exterior. ').replace(/^\s*I\/E\.?\s*/i, 'Interior, exterior. ').replace(/^\s*INT\.?\s+/i, 'Interior. ').replace(/^\s*EXT\.?\s+/i, 'Exterior. ').replace(/^\s*EST\.?\s+/i, 'Establishing. ').replace(/\s+-\s+/g, '. ');
+  }
+
+  function buildReadQueue(d, fromIndex) {
+    const rs = readSettings();
+    const q = [];
+    let speaker = null;
+    for (let i = 0; i < d.elements.length; i++) {
+      const e = d.elements[i];
+      const t = (e.text || '').trim();
+      if (e.type === 'character') { speaker = SD.charName(t) || speaker; if (i >= fromIndex && rs.names && t) q.push({ id: e.id, text: speaker, who: null }); continue; }
+      if (i < fromIndex || !t) continue;
+      if (e.type === 'dialogue') q.push({ id: e.id, text: t, who: speaker });
+      else if (e.type === 'parenthetical') { if (rs.parens) q.push({ id: e.id, text: t.replace(/[()]/g, ''), who: null }); }
+      else if (e.type === 'scene' || e.type === 'page') { if (rs.headings) q.push({ id: e.id, text: e.type === 'scene' ? spokenScene(t) : t, who: null }); speaker = null; }
+      else if (rs.action) q.push({ id: e.id, text: t, who: null });
+    }
+    return q;
+  }
+
+  // Chrome stops long utterances, so speak in sentence-sized pieces.
+  const chunks = (t) => (t.match(/[^.!?…]+[.!?…]*["”’)]*\s*|.+$/g) || [t]).reduce((out, s) => { if (out.length && (out[out.length - 1] + s).length < 180) out[out.length - 1] += s; else out.push(s); return out; }, []);
+
+  function startTableRead() {
+    const d = currentDoc();
+    if (!d || d.kind !== 'script') { toast('Open a script for a table read.'); return; }
+    if (!speechOK()) { toast('This browser cannot read aloud. Try Chrome, Edge or Safari.'); return; }
+    if (state.view !== 'script') setView('script');
+    syncEditor();
+    stopTableRead(true);
+    const from = Math.max(0, Math.min(state.caretIndex || 0, d.elements.length - 1));
+    reader.queue = buildReadQueue(d, from);
+    if (!reader.queue.length) { toast('Nothing to read from here. Put the cursor earlier in the script.'); return; }
+    Object.assign(reader, { on: true, paused: false, docId: d.id, at: 0 });
+    showReadBar();
+    speakCurrent();
+  }
+
+  function speakCurrent() {
+    if (!reader.on) return;
+    speechSynthesis.cancel();
+    const item = reader.queue[reader.at];
+    if (!item) { stopTableRead(); toast('Table read finished.'); return; }
+    editor.root.querySelectorAll('.el.reading').forEach((b) => b.classList.remove('reading'));
+    const b = blockById(item.id);
+    if (b) { b.classList.add('reading'); b.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    updateReadBar(item);
+    const { voice, pitch } = voiceFor(item.who);
+    const parts = chunks(item.text);
+    const token = (reader.token = {});
+    let k = 0;
+    const next = () => {
+      if (reader.token !== token || !reader.on) return;
+      if (k >= parts.length) { reader.at++; speakCurrent(); return; }
+      const u = new SpeechSynthesisUtterance(parts[k++]);
+      if (voice) { u.voice = voice; u.lang = voice.lang; }
+      u.pitch = pitch;
+      u.rate = readSettings().rate || 1;
+      u.onend = next;
+      u.onerror = (e) => { if (e.error !== 'interrupted' && e.error !== 'canceled') next(); };
+      speechSynthesis.speak(u);
+    };
+    next();
+  }
+
+  function stopTableRead(silent) {
+    reader.on = false;
+    reader.token = null;
+    if (speechOK()) speechSynthesis.cancel();
+    editor.root.querySelectorAll('.el.reading').forEach((b) => b.classList.remove('reading'));
+    if (reader.bar) reader.bar.hidden = true;
+    if (!silent) renderToolbar();
+  }
+
+  function pauseTableRead() {
+    if (!reader.on) return;
+    if (reader.paused) { reader.paused = false; speakCurrent(); }
+    else { reader.paused = true; reader.token = null; speechSynthesis.cancel(); }
+    updateReadBar(reader.queue[reader.at]);
+  }
+
+  function showReadBar() {
+    if (!reader.bar) {
+      reader.who = h('strong', { class: 'rb-who' });
+      reader.pos = h('span', { class: 'rb-pos muted small' });
+      reader.pauseBtn = h('button', { class: 'btn small', onclick: pauseTableRead }, '⏸ Pause');
+      reader.bar = h('div', { class: 'read-bar', role: 'region', 'aria-label': 'Table read' },
+        h('span', { class: 'rb-icon' }, '🔊'), reader.who, reader.pos,
+        h('span', { class: 'push-right row-gap' },
+          h('button', { class: 'btn small', title: 'Previous line', onclick: () => { reader.at = Math.max(0, reader.at - 1); reader.paused = false; speakCurrent(); } }, '⏮'),
+          reader.pauseBtn,
+          h('button', { class: 'btn small', title: 'Next line', onclick: () => { reader.at++; reader.paused = false; speakCurrent(); } }, '⏭'),
+          h('select', { class: 'select small', title: 'Speed', onchange: (e) => { readSettings().rate = +e.target.value; markDirty(); } }, [0.8, 1, 1.15, 1.3, 1.5].map((r) => h('option', { value: r, selected: r === (readSettings().rate || 1) }, r + '×'))),
+          h('button', { class: 'btn ghost small', onclick: () => tableReadVoices() }, 'Voices…'),
+          h('button', { class: 'btn small', title: 'Stop', onclick: () => stopTableRead() }, '■ Stop')));
+      $('.workspace').append(reader.bar);
+    }
+    reader.bar.hidden = false;
+  }
+
+  function updateReadBar(item) {
+    if (!reader.bar || !item) return;
+    reader.who.textContent = item.who || 'Narrator';
+    reader.pos.textContent = `${reader.at + 1} / ${reader.queue.length}`;
+    reader.pauseBtn.textContent = reader.paused ? '▶ Resume' : '⏸ Pause';
+  }
+
+  async function tableReadVoices() {
+    const rs = readSettings();
+    const d = state.project.documents.find((x) => x.id === (reader.docId || state.docId));
+    const voices = voiceList();
+    if (!voices.length) { toast('No voices are available yet. Try again in a moment.'); return; }
+    const names = d && d.kind === 'script' ? characterStats(d).map((c) => c.name) : [];
+    const sel = (cur, name) => {
+      const auto = voiceFor(name).voice;
+      return h('select', { class: 'select small', dataset: { name: name || '' } },
+        h('option', { value: '' }, 'Automatic' + (auto ? ' (' + auto.name + ')' : '')),
+        voices.map((v) => h('option', { value: v.voiceURI, selected: v.voiceURI === cur }, `${v.name} — ${v.lang}`)));
+    };
+    const test = (name, s) => h('button', { class: 'btn ghost small', onclick: () => { const u = new SpeechSynthesisUtterance(name ? 'This is ' + name.toLowerCase() + '.' : 'I read the scene headings and the action.'); const v = voices.find((x) => x.voiceURI === s.value) || voiceFor(name).voice; if (v) u.voice = v; u.pitch = voiceFor(name).pitch; speechSynthesis.cancel(); speechSynthesis.speak(u); } }, '▶');
+    const nSel = sel(rs.narrator, null);
+    const rows = names.map((n) => { const s = sel(rs.voices[n], n); return h('div', { class: 'tr-row' }, h('span', { class: 'tr-name' }, n), s, test(n, s)); });
+    const box = (k, label) => h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: rs[k], dataset: { k } }), ' ' + label);
+    const opts = h('div', {}, box('headings', 'Read scene headings'), box('action', 'Read action'), box('parens', 'Read parentheticals'), box('names', 'Say the character name before each speech'));
+    const ok = await modal({
+      title: 'Table read voices', wide: true,
+      body: h('div', { class: 'tr-voices' },
+        h('div', { class: 'tr-row' }, h('span', { class: 'tr-name' }, 'Narrator'), nSel, test(null, nSel)),
+        rows.length ? rows : h('p', { class: 'muted small' }, 'Characters appear here once the script has dialogue.'),
+        opts,
+        h('p', { class: 'muted small' }, 'Which voices you get depends on your browser and computer. Characters sharing a voice get a different pitch.')),
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Save', value: true, primary: true }],
+    });
+    if (!ok) return;
+    rs.narrator = nSel.value;
+    for (const r of rows) { const s = r.querySelector('select'); if (s.value) rs.voices[s.dataset.name] = s.value; else delete rs.voices[s.dataset.name]; }
+    opts.querySelectorAll('input[data-k]').forEach((i) => { rs[i.dataset.k] = i.checked; });
+    markDirty();
+    if (reader.on) { const d2 = state.project.documents.find((x) => x.id === reader.docId); const id = reader.queue[reader.at] && reader.queue[reader.at].id; reader.queue = buildReadQueue(d2, Math.max(0, d2.elements.findIndex((e) => e.id === id))); reader.at = 0; }
+  }
+  if (speechOK()) speechSynthesis.getVoices(); // starts loading the voice list
+
+  // =====================================================================
+  // script health
+  // =====================================================================
+  const NARR = new Set(['action', 'shot', 'general', 'panel', 'caption', 'sfx', 'sound', 'music', 'audio', 'transition']);
+  const wordsIn = (t) => ((t || '').match(/[\p{L}\p{N}'’-]+/gu) || []).length;
+
+  function healthData(d) {
+    const scenes = SD.getScenes(d);
+    const est = scenes.estimate || SD.estimate(d);
+    const per = scenes.map((s) => {
+      let dw = 0, aw = 0, speeches = 0;
+      const who = new Map();
+      let speaker = null;
+      for (let i = s.start + 1; i < s.end; i++) {
+        const e = d.elements[i];
+        if (e.type === 'character') speaker = SD.charName(e.text);
+        else if (e.type === 'dialogue') { const w = wordsIn(e.text); dw += w; speeches++; if (speaker) who.set(speaker, (who.get(speaker) || 0) + w); }
+        else if (NARR.has(e.type)) aw += wordsIn(e.text);
+      }
+      return { scene: s, dw, aw, speeches, who };
+    });
+    // where in the script each speech is (0…1), for the character heatmap
+    const segs = 10;
+    const chars = new Map();
+    let speaker = null;
+    d.elements.forEach((e, i) => {
+      if (e.type === 'character') speaker = SD.charName(e.text);
+      else if (e.type === 'dialogue' && speaker) {
+        const pos = Math.min(segs - 1, Math.floor((est.lineAt[i] / Math.max(1, est.totalLines)) * segs));
+        if (!chars.has(speaker)) chars.set(speaker, { name: speaker, words: 0, lines: 0, segs: new Array(segs).fill(0), longest: 0, longestText: '' });
+        const c = chars.get(speaker);
+        const w = wordsIn(e.text);
+        c.words += w; c.lines++; c.segs[pos] += w;
+        if (w > c.longest) { c.longest = w; c.longestText = e.text; }
+      }
+    });
+    return { scenes, per, est, chars: [...chars.values()].sort((a, b) => b.words - a.words), segs };
+  }
+
+  let tipEl = null;
+  function chartTip(e, html) {
+    if (!tipEl) { tipEl = h('div', { class: 'chart-tip', role: 'tooltip' }); document.body.append(tipEl); }
+    if (!html) { tipEl.hidden = true; return; }
+    tipEl.hidden = false;
+    tipEl.innerHTML = html;
+    const x = Math.min(window.innerWidth - tipEl.offsetWidth - 10, e.clientX + 14);
+    const y = Math.max(8, e.clientY - tipEl.offsetHeight - 12);
+    tipEl.style.left = x + 'px'; tipEl.style.top = y + 'px';
+  }
+  const esc = SD.escapeHtml;
+  const hoverable = (el, html) => { el.addEventListener('mousemove', (e) => chartTip(e, html)); el.addEventListener('mouseleave', (e) => chartTip(e, null)); return el; };
+
+  function healthReport(d) {
+    const H = healthData(d);
+    const wrap = h('div', { class: 'health viz-root' });
+    if (!H.scenes.length) { wrap.append(h('p', { class: 'muted' }, 'Add scenes to see how the script is shaped.')); return wrap; }
+    const lens = H.per.map((x) => x.scene.lines / SD.LINES_PER_PAGE);
+    const avg = lens.reduce((a, b) => a + b, 0) / lens.length;
+    const totDW = H.per.reduce((n, x) => n + x.dw, 0), totAW = H.per.reduce((n, x) => n + x.aw, 0);
+    const silent = H.per.filter((x) => !x.speeches).length;
+    const longest = H.per.reduce((a, b) => (b.scene.lines > a.scene.lines ? b : a));
+    const tile = (v, l, sub) => h('div', { class: 'stat' }, h('div', { class: 'stat-v' }, v), h('div', { class: 'stat-l' }, l), sub ? h('div', { class: 'stat-sub' }, sub) : null);
+    wrap.append(h('div', { class: 'health-tiles' },
+      tile(SD.eighths(avg * SD.LINES_PER_PAGE), 'Average scene (pages)', 'Most screenplays: 1–3 pages'),
+      tile('Sc ' + longest.scene.number, 'Longest scene', SD.eighths(longest.scene.lines) + ' pages'),
+      tile(Math.round((totDW / Math.max(1, totDW + totAW)) * 100) + '%', 'Of the words are dialogue', totAW + totDW ? `${totDW.toLocaleString()} dialogue · ${totAW.toLocaleString()} action` : ''),
+      tile(silent, 'Scenes without dialogue'),
+      tile(H.chars.length, 'Speaking characters', H.chars.filter((c) => c.lines === 1).length + ' with a single line')));
+
+    // 1. scene lengths
+    const maxLen = Math.max(...lens, 1);
+    const nSc = H.scenes.length, L = 36;
+    const bw = nSc <= 12 ? 40 : nSc <= 40 ? 20 : 12;
+    const W = L + nSc * bw + 70, CH = 150;
+    const svg1 = svgEl('svg', { viewBox: `0 0 ${W} ${CH + 20}`, width: W, height: CH + 20, class: 'hchart', role: 'img', 'aria-label': 'Length of each scene in pages' });
+    const y = (v) => CH - (v / maxLen) * (CH - 10);
+    [0.5, 1, 2, 3, 5].filter((v) => v < maxLen).forEach((v) => { svg1.append(svgEl('line', { x1: L, x2: W - 70, y1: y(v), y2: y(v), class: 'hgrid' }), svgEl('text', { x: 2, y: y(v) - 3, class: 'haxis' }, v + ' pg')); });
+    H.per.forEach((x, i) => {
+      const v = lens[i];
+      const r = svgEl('path', { d: barPath(L + i * bw + 1, y(v), Math.max(2, bw - 2), CH - y(v)), class: 'hbar s1' });
+      const hit = svgEl('rect', { x: L + i * bw, y: 0, width: bw, height: CH, class: 'hhit' });
+      const g = svgEl('g', {}, r, hit);
+      hoverable(g, `<b>Scene ${x.scene.number}</b><br>${esc(x.scene.el.text.toUpperCase() || 'Untitled')}<br>${SD.eighths(x.scene.lines)} pages · page ${x.scene.page}`);
+      g.addEventListener('click', () => goToScene(x.scene.id));
+      svg1.append(g);
+    });
+    svg1.append(svgEl('line', { x1: L, x2: W - 70, y1: y(avg), y2: y(avg), class: 'havg' }), svgEl('text', { x: W - 66, y: y(avg) + 3, class: 'haxis' }, 'average ' + SD.eighths(avg * SD.LINES_PER_PAGE)));
+    svg1.append(svgEl('line', { x1: L, x2: W - 70, y1: CH, y2: CH, class: 'hbase' }));
+    svg1.append(svgEl('text', { x: L, y: CH + 15, class: 'haxis' }, 'Scene 1'), svgEl('text', { x: W - 70, y: CH + 15, class: 'haxis end' }, 'Scene ' + H.scenes.length));
+    wrap.append(chartCard('Scene lengths', 'Pages per scene, in script order. Click a bar to jump to the scene. Long runs of long scenes can feel slow; a sudden run of short ones speeds things up.', svg1));
+
+    // 2. dialogue vs action per scene (100% stacked)
+    const svg2 = svgEl('svg', { viewBox: `0 0 ${W} ${CH + 20}`, width: W, height: CH + 20, class: 'hchart', role: 'img', 'aria-label': 'Share of dialogue and action words per scene' });
+    H.per.forEach((x, i) => {
+      const t = x.dw + x.aw;
+      const g = svgEl('g', {});
+      if (!t) g.append(svgEl('rect', { x: L + i * bw + 1, y: CH - 2, width: Math.max(2, bw - 2), height: 2, class: 'hempty' }));
+      else {
+        const hd = (x.dw / t) * CH, ha = CH - hd;
+        if (ha > 0) g.append(svgEl('rect', { x: L + i * bw + 1, y: 0, width: Math.max(2, bw - 2), height: Math.max(0, ha - (hd > 0 ? 1 : 0)), class: 'hbar s2', rx: 2 }));
+        if (hd > 0) g.append(svgEl('rect', { x: L + i * bw + 1, y: CH - hd + (ha > 0 ? 1 : 0), width: Math.max(2, bw - 2), height: Math.max(0, hd - (ha > 0 ? 1 : 0)), class: 'hbar s1', rx: 2 }));
+      }
+      g.append(svgEl('rect', { x: L + i * bw, y: 0, width: bw, height: CH, class: 'hhit' }));
+      hoverable(g, `<b>Scene ${x.scene.number}</b><br><span class="tip-key s1"></span>Dialogue ${x.dw} words<br><span class="tip-key s2"></span>Action ${x.aw} words`);
+      g.addEventListener('click', () => goToScene(x.scene.id));
+      svg2.append(g);
+    });
+    svg2.append(svgEl('line', { x1: L, x2: W - 70, y1: CH / 2, y2: CH / 2, class: 'hgrid' }), svgEl('text', { x: 2, y: CH / 2 - 3, class: 'haxis' }, '50%'));
+    wrap.append(chartCard('Dialogue and action', 'Share of words in each scene.', svg2,
+      h('div', { class: 'legend' }, h('span', {}, h('i', { class: 'key s1' }), 'Dialogue'), h('span', {}, h('i', { class: 'key s2' }), 'Action'))));
+
+    // 3. who speaks where (heatmap)
+    const top = H.chars.slice(0, 12);
+    if (top.length) {
+      const maxCell = Math.max(1, ...top.flatMap((c) => c.segs));
+      const grid = h('div', { class: 'heat', style: `--segs:${H.segs}` },
+        h('div', { class: 'heat-corner' }),
+        Array.from({ length: H.segs }, (_, i) => h('div', { class: 'heat-col' }, i === 0 ? 'Start' : i === H.segs - 1 ? 'End' : i === H.segs / 2 ? 'Middle' : '')),
+        top.map((c) => [
+          h('div', { class: 'heat-name', title: c.name }, c.name),
+          c.segs.map((w, i) => hoverable(h('div', { class: 'heat-cell', style: `--a:${w ? 0.12 + 0.88 * (w / maxCell) : 0}` }), `<b>${esc(c.name)}</b><br>${w} words spoken in the ${ordinal(i + 1)} tenth of the script`)),
+        ]));
+      wrap.append(chartCard('Who speaks where', `Words spoken by the ${top.length} biggest speaking parts, across ten equal stretches of the script. Darker means more. Gaps show where a character disappears.`, grid,
+        h('div', { class: 'legend' }, h('span', {}, 'Fewer words'), h('i', { class: 'ramp' }), h('span', {}, 'More words'))));
+
+      // 4. share of dialogue
+      const total = top.reduce((n, c) => n + c.words, 0) || 1;
+      const bars = h('div', { class: 'share' }, top.map((c) => hoverable(h('div', { class: 'share-row' },
+        h('span', { class: 'share-name' }, c.name),
+        h('span', { class: 'share-track' }, h('span', { class: 'share-bar', style: `width:${(c.words / top[0].words) * 100}%` })),
+        h('span', { class: 'share-v' }, Math.round((c.words / total) * 100) + '%')), `<b>${esc(c.name)}</b><br>${c.words} words in ${c.lines} speeches<br>Longest speech: ${c.longest} words`)));
+      wrap.append(chartCard('Share of the dialogue', 'Of all words spoken by these characters.', bars));
+    }
+
+    // 5. lists to check
+    const speeches = [];
+    let sp = null;
+    d.elements.forEach((e) => { if (e.type === 'character') sp = SD.charName(e.text); else if (e.type === 'dialogue') speeches.push({ who: sp, w: wordsIn(e.text), text: e.text, id: e.id }); });
+    const longSp = speeches.sort((a, b) => b.w - a.w).slice(0, 5).filter((x) => x.w > 0);
+    wrap.append(h('div', { class: 'health-lists' },
+      h('section', { class: 'chart-card' }, h('h3', {}, 'Longest speeches'),
+        longSp.length ? h('ol', {}, longSp.map((x) => h('li', {}, h('button', { class: 'linklike', onclick: () => { state.view = 'script'; renderView(); requestAnimationFrame(() => editor.goTo(x.id)); } }, x.who || '—'), ` · ${x.w} words — “${x.text.slice(0, 70)}${x.text.length > 70 ? '…' : ''}”`))) : h('p', { class: 'muted small' }, 'No dialogue yet.')),
+      h('section', { class: 'chart-card' }, h('h3', {}, 'Worth a look'),
+        h('ul', {},
+          H.per.filter((x) => x.scene.lines / SD.LINES_PER_PAGE > 4).map((x) => h('li', {}, `Scene ${x.scene.number} is ${SD.eighths(x.scene.lines)} pages long.`)),
+          H.chars.filter((c) => c.lines === 1).slice(0, 8).map((c) => h('li', {}, `${c.name} speaks only once — could the line go to someone else?`)),
+          H.chars.slice(0, 6).filter((c) => c.segs.slice(3, 7).every((w) => !w) && c.segs.some((w) => w)).map((c) => h('li', {}, `${c.name} is silent through the middle of the script.`)),
+          h('li', { class: 'muted' }, 'Page counts are estimates (55 lines a page).')))));
+    return wrap;
+  }
+  const ordinal = (n) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag, attrs, ...kids) {
+    const e = document.createElementNS(SVGNS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+    for (const k of kids) e.append(k);
+    return e;
+  }
+  // bar with 4px rounded top, square at the baseline
+  function barPath(x, y, w, hgt) {
+    const r = Math.min(4, w / 2, hgt);
+    return `M${x},${y + hgt}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + hgt}Z`;
+  }
+  const chartCard = (title, sub, chart, legend) => h('section', { class: 'chart-card' }, h('h3', {}, title), h('p', { class: 'muted small' }, sub), legend || null, h('div', { class: 'chart-scroll' }, chart));
+
+  // =====================================================================
+  // writing goals & sprint timer
+  // =====================================================================
+  const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  function projectWords() {
+    let n = 0;
+    for (const d of state.project.documents) {
+      if (d.kind === 'script') n += SD.wordCount(d);
+      else if (d.kind === 'note') n += wordsIn(d.text);
+    }
+    return n;
+  }
+  function goals() {
+    const p = state.project;
+    p.writingLog = p.writingLog && typeof p.writingLog === 'object' ? p.writingLog : {};
+    const g = (p.settings.goals = p.settings.goals && typeof p.settings.goals === 'object' ? p.settings.goals : {});
+    for (const [k, v] of Object.entries({ daily: 0, pages: 0, work: 25, rest: 5, breaks: false })) if (g[k] == null) g[k] = v;
+    return g;
+  }
+  function logToday() {
+    goals();
+    const log = state.project.writingLog;
+    const k = today();
+    if (!log[k]) log[k] = { base: projectWords(), words: 0, minutes: 0 };
+    return log[k];
+  }
+  const trackWords = debounce(() => {
+    if (!state.project) return;
+    const e = logToday();
+    e.words = Math.max(0, projectWords() - e.base);
+    renderGoalChip();
+  }, 1500);
+
+  const timer = { running: false, mode: 'work', endsAt: 0, left: 0, minutes: 25, handle: null, startedWords: 0, workMs: 0, tickAt: 0 };
+  function chime() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [660, 880].forEach((f, i) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+        const t = ctx.currentTime + i * 0.25;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+        o.start(t); o.stop(t + 0.55);
+      });
+    } catch (e) { /* no sound */ }
+  }
+  function startTimer(min, mode = 'work') {
+    clearInterval(timer.handle);
+    Object.assign(timer, { running: true, mode, minutes: min, endsAt: Date.now() + min * 60000, tickAt: Date.now() });
+    if (mode === 'work') timer.startedWords = projectWords();
+    timer.handle = setInterval(tickTimer, 500);
+    tickTimer();
+  }
+  function stopTimer(done) {
+    if (timer.running && timer.mode === 'work') addWorkTime();
+    clearInterval(timer.handle);
+    timer.running = false;
+    if (!done) toast('Timer stopped.');
+    renderGoalChip();
+  }
+  function addWorkTime() {
+    const ms = Date.now() - timer.tickAt;
+    timer.tickAt = Date.now();
+    const e = logToday();
+    e.minutes = Math.round(((e.minutes || 0) + ms / 60000) * 10) / 10;
+    markDirty();
+  }
+  function tickTimer() {
+    const left = timer.endsAt - Date.now();
+    if (left <= 0) {
+      const g = goals();
+      if (timer.mode === 'work') {
+        addWorkTime();
+        const w = projectWords() - timer.startedWords;
+        chime();
+        if (g.breaks) { toast(`Sprint done: ${Math.max(0, w)} words. Take a ${g.rest}-minute break.`); startTimer(g.rest, 'rest'); }
+        else { toast(`Time is up! ${Math.max(0, w)} words in this sprint.`); stopTimer(true); }
+      } else { chime(); toast('Break over — back to writing.'); startTimer(g.work, 'work'); }
+      return;
+    }
+    timer.left = left;
+    renderGoalChip();
+  }
+  function renderGoalChip() {
+    const chip = $('#goal-chip');
+    if (!chip || !state.project) return;
+    const g = goals();
+    const e = state.project.writingLog[today()];
+    const words = e ? e.words : 0;
+    const parts = [];
+    if (timer.running) { const s = Math.ceil(timer.left / 1000); parts.push((timer.mode === 'rest' ? '☕ ' : '⏱ ') + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')); }
+    if (g.daily) parts.push(`${words}/${g.daily}`);
+    chip.textContent = parts.length ? parts.join(' · ') : '⏱';
+    chip.classList.toggle('active', timer.running);
+    chip.classList.toggle('met', !!g.daily && words >= g.daily);
+    chip.style.setProperty('--goal', g.daily ? Math.min(100, (words / g.daily) * 100) + '%' : '0%');
+    chip.title = timer.running ? (timer.mode === 'rest' ? 'Break' : 'Writing sprint') + ' running — click for goals and timer' : 'Writing goals and sprint timer';
+  }
+
+  async function openGoals() {
+    const g = goals();
+    const e = logToday();
+    e.words = Math.max(0, projectWords() - e.base);
+    const scripts = state.project.documents.filter((d) => d.kind === 'script');
+    const pages = scripts.reduce((n, d) => n + SD.estimate(d).pages, 0);
+    const num = (val, onset, props = {}) => h('input', Object.assign({ class: 'input', type: 'number', min: 0, value: val || '', oninput: (ev) => { onset(Math.max(0, +ev.target.value || 0)); markDirty(); renderGoalChip(); } }, props));
+    // last 14 days
+    const days = [];
+    for (let i = 13; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); days.push([d, state.project.writingLog[k]]); }
+    const max = Math.max(g.daily || 0, ...days.map(([, x]) => (x ? x.words : 0)), 1);
+    let streak = 0;
+    for (let i = days.length - 1; i >= 0; i--) { const x = days[i][1]; if (x && x.words > 0) streak++; else if (i !== days.length - 1) break; }
+    const hist = h('div', { class: 'goal-hist', role: 'img', 'aria-label': 'Words written per day, last 14 days' }, days.map(([d, x]) => hoverable(h('div', { class: 'gh-col' },
+      h('div', { class: 'gh-bar' + (g.daily && x && x.words >= g.daily ? ' met' : ''), style: `height:${((x ? x.words : 0) / max) * 100}%` }),
+      h('div', { class: 'gh-day' }, d.toLocaleDateString(undefined, { weekday: 'narrow' }))), `<b>${d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</b><br>${x ? x.words : 0} words${x && x.minutes ? ' · ' + Math.round(x.minutes) + ' min in sprints' : ''}`)));
+    if (g.daily) hist.style.setProperty('--goal-y', (100 - (g.daily / max) * 100) + '%');
+    const timerBox = h('div', { class: 'goal-timer' });
+    const drawTimer = () => timerBox.replaceChildren(
+      timer.running
+        ? h('div', { class: 'row-gap' }, h('span', { class: 'goal-big' }, $('#goal-chip').textContent.split(' · ')[0]), h('button', { class: 'btn', onclick: () => { stopTimer(); drawTimer(); } }, '■ Stop'))
+        : h('div', { class: 'row-gap' }, [10, 15, 25, 45, 60].map((m) => h('button', { class: 'btn small', onclick: () => { startTimer(m); drawTimer(); toast(`Writing sprint: ${m} minutes. Go!`); } }, m + ' min')),
+          h('button', { class: 'btn small', onclick: async () => { const v = await promptText('Sprint length in minutes', '30'); if (+v > 0) { startTimer(+v); drawTimer(); } } }, 'Other…')));
+    drawTimer();
+    await modal({
+      title: 'Writing goals & timer', wide: true,
+      body: h('div', { class: 'goals' },
+        h('div', { class: 'health-tiles' },
+          h('div', { class: 'stat' }, h('div', { class: 'stat-v' }, e.words.toLocaleString()), h('div', { class: 'stat-l' }, 'Words written today'), g.daily ? h('div', { class: 'stat-sub' }, e.words >= g.daily ? 'Goal reached 🎉' : `${g.daily - e.words} to go`) : null),
+          h('div', { class: 'stat' }, h('div', { class: 'stat-v' }, streak), h('div', { class: 'stat-l' }, 'Day streak')),
+          h('div', { class: 'stat' }, h('div', { class: 'stat-v' }, pages + (g.pages ? ' / ' + g.pages : '')), h('div', { class: 'stat-l' }, 'Script pages (est.)'), g.pages ? h('div', { class: 'stat-sub' }, Math.min(100, Math.round((pages / g.pages) * 100)) + '% of the target') : null)),
+        h('h3', {}, 'Last 14 days'), hist,
+        h('h3', {}, 'Goals'),
+        h('div', { class: 'sb-grid2' },
+          h('label', {}, h('span', { class: 'lbl' }, 'Words per day'), num(g.daily, (v) => { g.daily = v; }, { placeholder: 'e.g. 500' })),
+          h('label', {}, h('span', { class: 'lbl' }, 'Target length (pages)'), num(g.pages, (v) => { g.pages = v; }, { placeholder: 'e.g. 100' }))),
+        h('h3', {}, 'Sprint timer'),
+        timerBox,
+        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: g.breaks, onchange: (ev) => { g.breaks = ev.target.checked; markDirty(); } }), ' Scheduled breaks: after each sprint, a break, then the next sprint starts by itself'),
+        h('div', { class: 'sb-grid2' },
+          h('label', {}, h('span', { class: 'lbl' }, 'Sprint (minutes)'), num(g.work, (v) => { g.work = v || 25; })),
+          h('label', {}, h('span', { class: 'lbl' }, 'Break (minutes)'), num(g.rest, (v) => { g.rest = v || 5; }))),
+        h('p', { class: 'muted small' }, 'Words written = how much the project grew today (scripts and notes). The history is saved in the project file.')),
+      buttons: [{ label: 'Close', value: true, primary: true }],
+    });
+  }
+
+  // Print any nodes through #print-root.
+  async function printNodes(className, nodes, opts = {}) {
+    const root = $('#print-root');
+    root.className = className;
+    root.removeAttribute('style');
+    root.replaceChildren(...nodes);
+    const decoded = Promise.all([...root.querySelectorAll('img')].map((im) => (im.decode ? im.decode().catch(() => {}) : null)));
+    await Promise.race([decoded, new Promise((r) => setTimeout(r, 1500))]);
+    const pageStyle = $('#page-size-style');
+    const before = pageStyle.textContent;
+    const size = state.project.settings.pageSize === 'a4' ? 'A4' : 'letter';
+    pageStyle.textContent = `@page { size: ${size}${opts.landscape ? ' landscape' : ''}; margin: ${opts.margin || '0.6in'}; }`;
+    const docTitle = document.title;
+    if (opts.title) document.title = safeName(opts.title);
+    window.addEventListener('afterprint', () => { pageStyle.textContent = before; document.title = docTitle; }, { once: true });
+    window.print();
+  }
+
+  // What the plug-in document kinds may use.
+  SD.ui = {
+    h, $, modal, promptText, popupMenu, toast, download, safeName, debounce, printNodes,
+    get state() { return state; },
+    get project() { return state.project; },
+    markDirty: () => markDirty(),
+    currentDoc: () => currentDoc(),
+    renderView: () => renderView(),
+    renderNavigator: () => renderNavigator(),
+    renderNavigatorSoon: () => renderNavigatorSoon(),
+    renderStatus: () => renderStatus(),
+    renderStatusSoon: () => renderStatusSoon(),
+    renderDocList: () => renderDocList(),
+    openCatalogItem: (id, create) => openCatalogItem(id, create),
+    goToScene: (docId, sceneId) => { syncEditor(); state.docId = docId; state.view = 'script'; state.editorStale = true; renderDocList(); renderView(); requestAnimationFrame(() => editor.goTo(sceneId)); setTimeout(() => editor.goTo(sceneId), 60); },
+    syncEditor: () => syncEditor(),
+    tab: (kind, fallback) => state.kindTab[kind] || fallback,
+  };
 
   document.addEventListener('DOMContentLoaded', init);
 })();

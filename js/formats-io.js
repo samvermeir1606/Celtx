@@ -306,6 +306,45 @@ ${tpLines.join('\n')}
     return { nodes, seq, get, val };
   }
 
+  async function svgToPng(text) {
+    const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    const root = doc.documentElement;
+    if (!root || root.localName !== 'svg') return '';
+    root.querySelectorAll('script, foreignObject').forEach((x) => x.remove());
+    for (const el of [root, ...root.querySelectorAll('*')]) {
+      for (const a of [...el.attributes]) if (/^on/i.test(a.name) || (/href$/i.test(a.name) && !/^#|^data:image\//i.test(a.value))) el.removeAttribute(a.name);
+    }
+    const svg = document.importNode(root, true);
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:absolute;left:-10000px;top:0;width:10px;height:10px;overflow:hidden';
+    holder.append(svg);
+    document.body.append(holder);
+    let bb = null;
+    try { bb = svg.getBBox(); } catch (e) { /* not measurable */ }
+    holder.remove();
+    if (!bb || !bb.width || !bb.height) return '';
+    const pad = Math.max(bb.width, bb.height) * 0.05;
+    const vw = bb.width + pad * 2, vh = bb.height + pad * 2;
+    const W = 900, H = Math.max(1, Math.round(W * vh / vw));
+    svg.setAttribute('viewBox', `${bb.x - pad} ${bb.y - pad} ${vw} ${vh}`);
+    svg.setAttribute('width', W);
+    svg.setAttribute('height', H);
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }));
+    try {
+      const im = new Image();
+      await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = url; });
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(im, 0, 0, W, H);
+      return cv.toDataURL('image/png');
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   const isBreakdownItem = (catalog, id) => {
     const it = catalog.find((c) => c.id === id);
     return !!it && it.category !== 'character' && it.category !== 'actor';
@@ -382,6 +421,8 @@ ${tpLines.join('\n')}
 
       // ---------- documents ----------
       const documents = [];
+      const sceneRef = new Map();
+      const docByAbout = new Map();
       for (const n of nodes) {
         if (n.type !== 'Document') continue;
         const dt = ((n.res.doctype || [])[0] || '').split('/').pop();
@@ -392,7 +433,7 @@ ${tpLines.join('\n')}
         const html = await zf.async('string');
         if (CELTX_NOTE_DOCTYPES.has(dt)) {
           const text = htmlToText(html);
-          if (text) { const note = SD.newNote(name); note.text = text; documents.push(note); }
+          if (text) { const note = SD.newNote(name); note.text = text; const body = new DOMParser().parseFromString(html, 'text/html').body; note.html = SD.sanitizeHtml(body ? body.innerHTML : '') || SD.textToHtml(text); documents.push(note); }
           continue;
         }
         const scriptType = CELTX_DOCTYPES[dt];
@@ -437,6 +478,7 @@ ${tpLines.join('\n')}
             }
             if (!data && cls === 'sceneheading' && sceneData[sceneIdx] && !used.has(sceneIdx)) { data = sceneData[sceneIdx]; used.add(sceneIdx); sceneIdx++; }
             if (data) {
+              sceneRef.set(data.about, { doc, el: e });
               if (val(data, 'description')) e.synopsis = val(data, 'description');
               const col = val(data, 'colour').toLowerCase();
               const hex = CELTX_COLOURS[col] || (/^#[0-9a-f]{3,6}$/.test(col) ? col : '');
@@ -448,15 +490,87 @@ ${tpLines.join('\n')}
           if (curScene) {
             const extra = tagged.filter((id) => isBreakdownItem(catalog, id));
             if (extra.length) curScene.items = [...new Set([...(curScene.items || []), ...extra])];
-            if (notes.length) curScene.notes = [curScene.notes, ...notes].filter(Boolean).join('\n\n');
+
           }
+          if (notes.length) e.comments = notes.map((text) => ({ id: SD.uid(), text, quote: '', start: 0, end: 0, created: new Date().toISOString(), done: false }));
           els.push(e);
         }
         if (els.length) doc.elements = els;
+        docByAbout.set(n.about, doc);
         documents.push(doc);
       }
+      // ---------- storyboards (after the scripts, so sequences can point at their scenes) ----------
+      for (const n of nodes) {
+        if (n.type !== 'Document') continue;
+        const dt = ((n.res.doctype || [])[0] || '').split('/').pop();
+        if (!/^StoryboardDocument/.test(dt)) continue;
+        const local = val(n, 'localFile');
+        const zf = local && zipFile(local);
+        if (!zf) continue;
+        const xml = new DOMParser().parseFromString(await zf.async('string'), 'application/xml');
+        const sb = SD.newStoryboard(val(n, 'title') || 'Storyboard');
+        let ratio = '';
+        for (const sq of xml.querySelectorAll('sequence')) {
+          const ref = sceneRef.get(sq.getAttribute('source'));
+          if (ref && !sb.sourceId) sb.sourceId = ref.doc.id;
+          const linked = ref && ref.doc.id === sb.sourceId;
+          const seq = { id: SD.uid(), title: ref ? ref.el.text.toUpperCase() : tidyHeading(sq.getAttribute('title') || ''), shots: [] };
+          if (linked) seq.sceneId = ref.el.id;
+          for (const sh of sq.querySelectorAll('shot')) {
+            ratio = ratio || sh.getAttribute('ratio') || '';
+            const typeText = (sh.getAttribute('shottype') || '').replace(/:\s*$/, '').trim();
+            const shot = SD.newShot({ caption: sh.getAttribute('title') || '', shotType: SD.matchShotType(typeText) });
+            if (typeText && !shot.shotType) shot.notes = typeText;
+            const imgName = (sh.getAttribute('image') || '').split('/').pop();
+            const izf = imgName && zipFile(decodeURIComponent(imgName));
+            if (izf) { try { shot.image = await SD.imageToDataUrl(await izf.async('blob'), 1280); } catch (e) { /* skip unreadable picture */ } }
+            const setup = sh.getAttribute('setupres');
+            const sn = setup && get(setup, (m) => m.type === 'Document');
+            const sl = sn && val(sn, 'localFile');
+            const szf = sl && zipFile(sl);
+            if (szf) { try { shot.diagram = await svgToPng(await szf.async('string')); } catch (e) { /* skip unreadable sketch */ } }
+            seq.shots.push(shot);
+          }
+          sb.sequences.push(seq);
+        }
+        const r = ratio.replace('x', ':');
+        if (SD.FRAME_RATIOS[r]) sb.ratio = r;
+        if (sb.sequences.length) documents.push(sb);
+      }
+      // ---------- production schedules (.ics with one entry per scheduled scene) ----------
+      for (const n of nodes) {
+        if (n.type !== 'Document') continue;
+        const dt = ((n.res.doctype || [])[0] || '').split('/').pop();
+        if (dt !== 'ScheduleDocument' || !SD.KINDS.schedule) continue;
+        const local = val(n, 'localFile');
+        const zf = local && zipFile(local);
+        const sch = SD.KINDS.schedule.create({ documents: [] }, val(n, 'title') || 'Schedule');
+        const src = docByAbout.get((n.res.source || [])[0]);
+        if (src) sch.sourceId = src.id;
+        Object.assign(sch.callsheet, {
+          company: val(n, 'callsheet_prodocompany'), contact: val(n, 'callsheet_contactinfo'), producer: val(n, 'callsheet_prodoteam'),
+          location: val(n, 'callsheet_prodonotes'), weather: val(n, 'callsheet_weather'),
+        });
+        const byDate = new Map();
+        for (const e of zf ? SD.parseIcs(await zf.async('string')) : []) {
+          const ref = sceneRef.get(e['X-CELTX-SCENE']);
+          if (ref) {
+            if (!sch.sourceId) sch.sourceId = ref.doc.id;
+            if (ref.doc.id !== sch.sourceId) continue;
+            if (!byDate.has(e.date)) byDate.set(e.date, { id: SD.uid(), date: e.date, call: e.time, notes: '', scenes: [] });
+            const day = byDate.get(e.date);
+            day.scenes.push(ref.el.id);
+            if (e.time && (!day.call || e.time < day.call)) day.call = e.time;
+            if (e.COMMENT) day.notes = [day.notes, e.COMMENT.trim()].filter(Boolean).join(' · ');
+            if (/^yes$/i.test(e['X-CELTX-COMPLETED'] || '')) sch.done[ref.el.id] = true;
+          } else if (e.SUMMARY) sch.events.push({ id: SD.uid(), date: e.date, title: e.SUMMARY, notes: e.DESCRIPTION || '' });
+        }
+        sch.days = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+        if (sch.days.length || sch.events.length || sch.sourceId) documents.push(sch);
+      }
       if (!documents.length && !catalog.length) throw new Error('No scripts or catalog items were found inside this .celtx file.');
-      documents.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'script' ? -1 : 1));
+      const order = { script: 0, storyboard: 1, schedule: 2, note: 3 };
+      documents.sort((a, b) => (order[a.kind] ?? 3) - (order[b.kind] ?? 3));
       return { title: projectTitle || file.name.replace(/\.celtx$/i, ''), documents, catalog };
     },
   };

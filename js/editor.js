@@ -63,6 +63,7 @@
       for (const e of this.doc.elements) frag.appendChild(this.makeBlock(e));
       this.root.replaceChildren(frag);
       this.ensureNotEmpty();
+      if (this.opts.onRender) this.opts.onRender();
     }
 
     makeBlock(e) {
@@ -70,8 +71,62 @@
       d.className = 'el';
       d.dataset.type = e.type;
       d.dataset.id = e.id;
+      const open = e.comments ? e.comments.filter((c) => !c.done).length : 0;
+      if (open) d.dataset.comments = open;
       this.setBlockText(d, e.text);
       return d;
+    }
+
+    // Lines with open comments carry data-comments (drawn as a marker by the CSS).
+    refreshMarks() {
+      if (!this.doc) return;
+      const byId = new Map(this.doc.elements.map((e) => [e.id, e]));
+      for (const b of this.blocks()) {
+        const e = byId.get(b.dataset.id);
+        const n = e && e.comments ? e.comments.filter((c) => !c.done).length : 0;
+        if (n) b.dataset.comments = n; else delete b.dataset.comments;
+      }
+      if (this.opts.onRender) this.opts.onRender();
+    }
+
+    // A DOM range over characters start…end of a block's text.
+    rangeIn(block, start, end) {
+      const r = document.createRange();
+      const w = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+      let n, pos = 0, okStart = false;
+      while ((n = w.nextNode())) {
+        const len = n.length;
+        if (!okStart && start <= pos + len) { r.setStart(n, start - pos); okStart = true; }
+        if (okStart && end <= pos + len) { r.setEnd(n, end - pos); return r; }
+        pos += len;
+      }
+      return null;
+    }
+
+    // Where the selection (or the cursor) is: block, character offsets and selected text.
+    selectionInfo() {
+      const sel = getSelection();
+      if (sel.rangeCount && this.root.contains(sel.anchorNode)) {
+        const r = sel.getRangeAt(0);
+        const a = this.blockOf(r.startContainer), z = this.blockOf(r.endContainer);
+        if (a) {
+          const start = this.offsetIn(a, r.startContainer, r.startOffset);
+          const end = a === z ? this.offsetIn(a, r.endContainer, r.endOffset) : this.blockText(a).length;
+          return { block: a, start, end, text: this.blockText(a).slice(start, end) };
+        }
+      }
+      const b = this.curBlock || (this.lastCaret && this.blocks()[this.lastCaret.index]);
+      return b ? { block: b, start: 0, end: 0, text: '' } : null;
+    }
+
+    selectRange(id, start, end, focus = true) {
+      const b = this.root.querySelector(`[data-id="${CSS.escape(id)}"]`);
+      if (!b) return false;
+      const r = this.rangeIn(b, start, end);
+      if (focus) this.root.focus({ preventScroll: true });
+      if (r) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+      b.scrollIntoView({ block: 'center' });
+      return true;
     }
 
     setBlockText(d, text) {
@@ -290,6 +345,7 @@
     afterChange() {
       this.normalize();
       this.sync();
+      this.refreshMarks();
       this.lastState = this.snapshot();
       this.opts.onChange();
       this.onSelectionChange(true);

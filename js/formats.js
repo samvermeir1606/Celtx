@@ -4,6 +4,9 @@
   const SD = (window.SD = window.SD || {});
 
   SD.APP_ID = 'scriptdesk';
+  // Extra document kinds (beat board, sketch, schedule) register themselves here:
+  // { icon, label, create(project, name), normalize(d), render(root, d), hasContent(d), … }
+  SD.KINDS = SD.KINDS || {};
   SD.FILE_VERSION = 1;
   SD.FILE_EXT = '.scriptdesk';
 
@@ -25,6 +28,7 @@
     panel: 'Panel',
     caption: 'Caption',
     sfx: 'Sound Effect',
+    audio: 'Audio',
   };
 
   // enter: element that follows when you press Enter at the end of a block
@@ -66,7 +70,20 @@
       tab: { page: 'panel', panel: 'action', action: 'character', character: 'caption', caption: 'sfx', sfx: 'panel', dialogue: 'character' },
       labels: { action: 'Panel Description' },
     },
+    av: {
+      label: 'AV Script',
+      icon: '📺',
+      sceneType: 'scene',
+      // two columns: Video on the left, Audio (narration, dialogue, sound) on the right
+      elements: ['scene', 'shot', 'audio', 'character', 'parenthetical', 'dialogue', 'transition'],
+      enter: { scene: 'shot', shot: 'audio', audio: 'shot', character: 'dialogue', parenthetical: 'dialogue', dialogue: 'shot', transition: 'scene' },
+      tab: { scene: 'shot', shot: 'audio', audio: 'character', character: 'shot', parenthetical: 'dialogue', dialogue: 'parenthetical', transition: 'scene' },
+      labels: { scene: 'Segment', shot: 'Video' },
+      twoColumn: true,
+    },
   };
+  SD.AV_LEFT = new Set(['shot']);
+  SD.AV_RIGHT = new Set(['audio', 'character', 'parenthetical', 'dialogue']);
 
   SD.labelFor = (scriptType, el) =>
     (SD.SCRIPT_TYPES[scriptType] && SD.SCRIPT_TYPES[scriptType].labels[el]) || SD.ELEMENT_LABELS[el] || el;
@@ -95,7 +112,40 @@
     };
   };
 
-  SD.newNote = (name = 'Notes') => ({ id: SD.uid(), kind: 'note', name, text: '' });
+  SD.newNote = (name = 'Notes') => ({ id: SD.uid(), kind: 'note', name, text: '', html: '' });
+
+  // ---------- rich text (notes) ----------
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  SD.escapeHtml = esc;
+  SD.textToHtml = (text) => String(text || '').split(/\n{2,}/).filter((p) => p.trim()).map((p) => '<p>' + esc(p).replace(/\n/g, '<br>') + '</p>').join('');
+
+  // Keep only simple formatting: headings, paragraphs, bold/italic/underline, lists, quotes, links.
+  const ALLOWED = new Set(['P', 'H1', 'H2', 'H3', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'BR', 'HR', 'A', 'DIV', 'SPAN']);
+  SD.sanitizeHtml = (html) => {
+    const doc = new DOMParser().parseFromString('<body>' + (html || '') + '</body>', 'text/html');
+    const walk = (node) => {
+      for (const c of [...node.childNodes]) {
+        if (c.nodeType === 3) continue;
+        if (c.nodeType !== 1) { c.remove(); continue; }
+        const tag = c.tagName;
+        if (['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE', 'HEAD', 'META', 'LINK', 'TITLE'].includes(tag)) { c.remove(); continue; }
+        walk(c);
+        if (!ALLOWED.has(tag)) { c.replaceWith(...c.childNodes); continue; }
+        const href = tag === 'A' ? c.getAttribute('href') || '' : '';
+        for (const a of [...c.attributes]) c.removeAttribute(a.name);
+        if (tag === 'A' && /^(https?:|mailto:)/i.test(href)) { c.setAttribute('href', href); c.setAttribute('target', '_blank'); c.setAttribute('rel', 'noopener'); }
+        if (tag === 'SPAN') c.replaceWith(...c.childNodes);
+      }
+    };
+    walk(doc.body);
+    return doc.body.innerHTML.trim();
+  };
+  SD.htmlToPlain = (html) => {
+    const doc = new DOMParser().parseFromString('<body>' + (html || '') + '</body>', 'text/html');
+    doc.querySelectorAll('br').forEach((b) => b.replaceWith('\n'));
+    doc.querySelectorAll('p,h1,h2,h3,li,blockquote,div').forEach((b) => b.append('\n'));
+    return doc.body.textContent.replace(/\n{3,}/g, '\n\n').trim();
+  };
 
   SD.newProject = () => {
     const now = new Date().toISOString();
@@ -123,14 +173,23 @@
     p.catalog.forEach((c) => SD.normalizeCatalogItem(c));
     p.documents.forEach((d) => {
       d.id = d.id || SD.uid();
-      if (d.kind === 'note') { d.text = d.text || ''; d.name = d.name || 'Notes'; return; }
+      if (SD.KINDS[d.kind]) { d.name = d.name || SD.KINDS[d.kind].label; SD.KINDS[d.kind].normalize(d); return; }
+      if (d.kind === 'note') {
+        d.text = d.text || ''; d.name = d.name || 'Notes';
+        if (typeof d.html !== 'string') d.html = SD.textToHtml(d.text);
+        return;
+      }
       if (d.kind === 'storyline') { d.name = d.name || 'Storyline'; SD.normalizeStoryline(d); return; }
+      if (d.kind === 'storyboard') { d.name = d.name || 'Storyboard'; SD.normalizeStoryboard(d); return; }
       d.kind = 'script';
       if (!SD.SCRIPT_TYPES[d.scriptType]) d.scriptType = 'screenplay';
       d.name = d.name || SD.SCRIPT_TYPES[d.scriptType].label;
       d.titlePage = Object.assign({ enabled: true, title: '', credit: 'Written by', author: '', source: '', draftDate: '', contact: '' }, d.titlePage || {});
       if (!Array.isArray(d.elements) || !d.elements.length) d.elements = [{ id: SD.uid(), type: SD.SCRIPT_TYPES[d.scriptType].sceneType, text: '' }];
-      d.elements.forEach((e) => { e.id = e.id || SD.uid(); e.type = e.type || 'action'; e.text = e.text == null ? '' : String(e.text); });
+      d.elements.forEach((e) => {
+        e.id = e.id || SD.uid(); e.type = e.type || 'action'; e.text = e.text == null ? '' : String(e.text);
+        if (e.comments && !Array.isArray(e.comments)) delete e.comments;
+      });
     });
     return p;
   };
@@ -203,8 +262,18 @@
     const els = doc.elements;
     const lineAt = new Array(els.length);
     let line = 0;
+    const av = doc.scriptType === 'av';
     for (let i = 0; i < els.length; i++) {
       const e = els[i];
+      if (av && (SD.AV_LEFT.has(e.type) || SD.AV_RIGHT.has(e.type))) {
+        const prev = els[i - 1];
+        const n = SD.wrapLines(e.text, 28).length;
+        if (prev && SD.AV_RIGHT.has(e.type) && SD.AV_LEFT.has(prev.type)) { lineAt[i] = lineAt[i - 1]; line = Math.max(line, lineAt[i] + n); continue; }
+        if (i > 0) line += e.type === 'dialogue' || e.type === 'parenthetical' ? 0 : 1;
+        lineAt[i] = line;
+        line += n;
+        continue;
+      }
       if (i > 0) line += SD.SPACE_BEFORE[e.type] ?? 1;
       lineAt[i] = line;
       line += SD.wrapLines(e.text, SD.WIDTHS[e.type] || 60).length;
