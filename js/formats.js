@@ -29,6 +29,7 @@
     caption: 'Caption',
     sfx: 'Sound Effect',
     audio: 'Audio',
+    act: 'Act Break',
   };
 
   // enter: element that follows when you press Enter at the end of a block
@@ -82,13 +83,110 @@
       twoColumn: true,
     },
   };
+  // TV: single-camera drama and multi-camera sitcom, both with act breaks
+  SD.SCRIPT_TYPES.teleplay = {
+    label: 'TV Drama (single camera)',
+    icon: '📡',
+    sceneType: 'scene',
+    elements: ['scene', 'action', 'character', 'parenthetical', 'dialogue', 'transition', 'act', 'shot', 'general'],
+    enter: { scene: 'action', action: 'action', character: 'dialogue', parenthetical: 'dialogue', dialogue: 'character', transition: 'scene', act: 'scene', shot: 'action', general: 'general' },
+    tab: { scene: 'action', action: 'character', character: 'transition', parenthetical: 'dialogue', dialogue: 'parenthetical', transition: 'act', act: 'scene', shot: 'action', general: 'action' },
+    labels: {},
+    tv: true,
+  };
+  SD.SCRIPT_TYPES.sitcom = {
+    label: 'Sitcom (multi-camera)',
+    icon: '🛋️',
+    sceneType: 'scene',
+    elements: ['act', 'scene', 'action', 'character', 'parenthetical', 'dialogue', 'transition', 'general'],
+    enter: { act: 'scene', scene: 'action', action: 'character', character: 'dialogue', parenthetical: 'dialogue', dialogue: 'character', transition: 'scene', general: 'general' },
+    tab: { act: 'scene', scene: 'action', action: 'character', character: 'transition', parenthetical: 'dialogue', dialogue: 'parenthetical', transition: 'act', general: 'action' },
+    labels: {},
+    tv: true,
+  };
+  SD.ACT_NAMES = ['COLD OPEN', 'TEASER', 'ACT ONE', 'ACT TWO', 'ACT THREE', 'ACT FOUR', 'ACT FIVE', 'ACT SIX', 'TAG', 'END OF TEASER', 'END OF ACT ONE', 'END OF ACT TWO', 'END OF ACT THREE', 'END OF ACT FOUR', 'END OF ACT FIVE', 'END OF SHOW'];
   SD.AV_LEFT = new Set(['shot']);
   SD.AV_RIGHT = new Set(['audio', 'character', 'parenthetical', 'dialogue']);
 
   SD.labelFor = (scriptType, el) =>
     (SD.SCRIPT_TYPES[scriptType] && SD.SCRIPT_TYPES[scriptType].labels[el]) || SD.ELEMENT_LABELS[el] || el;
 
-  SD.UPPERCASE_TYPES = new Set(['scene', 'character', 'transition', 'shot', 'page', 'panel', 'sound']);
+  SD.UPPERCASE_TYPES = new Set(['scene', 'character', 'transition', 'shot', 'page', 'panel', 'sound', 'act']);
+
+  // ---------- inline formatting ----------
+  // An element's text stays plain; e.fmt holds [start, end, flags] runs (1 bold, 2 italic, 4 underline).
+  SD.FMT = { b: 1, i: 2, u: 4 };
+  SD.fmtClean = (runs) => {
+    const out = [];
+    for (const r of (runs || []).filter((x) => x && x[1] > x[0] && x[2]).sort((a, b) => a[0] - b[0])) {
+      const last = out[out.length - 1];
+      if (last && last[2] === r[2] && last[1] >= r[0]) last[1] = Math.max(last[1], r[1]);
+      else out.push([r[0], r[1], r[2]]);
+    }
+    return out;
+  };
+  SD.fmtSlice = (fmt, s, e) => (fmt || []).map(([a, b, f]) => [Math.max(a, s) - s, Math.min(b, e) - s, f]).filter(([a, b]) => b > a);
+  SD.fmtShift = (fmt, d) => (fmt || []).map(([a, b, f]) => [a + d, b + d, f]);
+  SD.fmtAt = (fmt, i) => { for (const [a, b, f] of fmt || []) if (a <= i && i < b) return f; return 0; };
+  const setFmt = (el, runs) => { const c = SD.fmtClean(runs); if (c.length) el.fmt = c; else delete el.fmt; };
+  // Replace text start…end with `ins`, keeping the formatting around it in place.
+  SD.editText = (el, start, end, ins) => {
+    const fmt = el.fmt;
+    el.text = el.text.slice(0, start) + ins + el.text.slice(end);
+    if (!fmt) return;
+    const f = SD.fmtAt(fmt, start);
+    setFmt(el, [...SD.fmtSlice(fmt, 0, start), ...(ins && f ? [[start, start + ins.length, f]] : []), ...SD.fmtShift(SD.fmtSlice(fmt, end, Infinity), start + ins.length)]);
+  };
+  // Pieces of text with their flags, in order.
+  SD.fmtSegments = (text, fmt) => {
+    text = text || '';
+    if (!fmt || !fmt.length) return [[text, 0]];
+    const cuts = new Set([0, text.length]);
+    for (const [a, b] of fmt) { cuts.add(Math.min(a, text.length)); cuts.add(Math.min(b, text.length)); }
+    const pts = [...cuts].sort((a, b) => a - b);
+    const segs = [];
+    for (let k = 0; k < pts.length - 1; k++) if (pts[k + 1] > pts[k]) segs.push([text.slice(pts[k], pts[k + 1]), SD.fmtAt(fmt, pts[k])]);
+    return segs;
+  };
+  // Fill a DOM element with formatted text (<b>, <i>, <u>).
+  SD.fillFormatted = (node, text, fmt) => {
+    node.textContent = '';
+    for (const [t, f] of SD.fmtSegments(text, fmt)) {
+      let n = document.createTextNode(t);
+      for (const [bit, tag] of [[4, 'u'], [2, 'i'], [1, 'b']]) if (f & bit) { const w = document.createElement(tag); w.append(n); n = w; }
+      node.append(n);
+    }
+  };
+  // Markers around formatted text, e.g. Fountain: **bold** *italic* _underline_
+  SD.fmtToMarkup = (text, fmt, open = { 1: '**', 2: '*', 4: '_' }, close = open) => SD.fmtSegments(text, fmt).map(([t, f]) => {
+    if (!f || !t.trim()) return t;
+    const lead = t.match(/^\s*/)[0], trail = t.match(/\s*$/)[0], core = t.trim();
+    let o = '', c = '';
+    for (const bit of [4, 1, 2]) if (f & bit) { o += open[bit]; c = close[bit] + c; }
+    return lead + o + core + c + trail;
+  }).join('');
+  // Read Fountain emphasis back: returns { text, fmt }.
+  SD.markupToFmt = (src) => {
+    let text = '', flags = 0;
+    const runs = [];
+    let i = 0, runStart = 0;
+    const flip = (bit) => { if (text.length > runStart && flags) runs.push([runStart, text.length, flags]); flags ^= bit; runStart = text.length; };
+    while (i < src.length) {
+      const ch = src[i];
+      if (ch === '\\' && /[*_\\]/.test(src[i + 1] || '')) { text += src[i + 1]; i += 2; continue; }
+      const m = src.startsWith('***', i) ? '***' : src.startsWith('**', i) ? '**' : ch === '*' ? '*' : ch === '_' ? '_' : '';
+      const bits = { '***': 3, '**': 1, '*': 2, _: 4 }[m];
+      if (m) {
+        const opening = (flags & bits) !== bits;
+        const closesLater = src.indexOf(m, i + m.length) > i + m.length;
+        if (!opening || closesLater) { flip(bits & (opening ? ~flags : flags) || bits); i += m.length; continue; }
+      }
+      text += ch;
+      i++;
+    }
+    if (text.length > runStart && flags) runs.push([runStart, text.length, flags]);
+    return { text, fmt: SD.fmtClean(runs) };
+  };
 
   // Catalog categories and forms live in catalog.js
 
@@ -112,7 +210,7 @@
     };
   };
 
-  SD.newNote = (name = 'Notes') => ({ id: SD.uid(), kind: 'note', name, text: '', html: '' });
+  SD.newNote = (name = 'Notes') => ({ id: SD.uid(), kind: 'note', name, text: '', html: '', about: [] });
 
   // ---------- rich text (notes) ----------
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -171,12 +269,15 @@
     p.settings = Object.assign({}, base.settings, p.settings || {});
     p.catalog = Array.isArray(p.catalog) ? p.catalog : [];
     p.catalog.forEach((c) => SD.normalizeCatalogItem(c));
+    p.folders = (Array.isArray(p.folders) ? p.folders : []).filter((f) => f && f.id).map((f) => ({ id: f.id, name: f.name || 'Folder', open: f.open !== false }));
     p.documents.forEach((d) => {
       d.id = d.id || SD.uid();
+      if (d.folder && !(p.folders || []).some((f) => f.id === d.folder)) delete d.folder;
       if (SD.KINDS[d.kind]) { d.name = d.name || SD.KINDS[d.kind].label; SD.KINDS[d.kind].normalize(d); return; }
       if (d.kind === 'note') {
         d.text = d.text || ''; d.name = d.name || 'Notes';
         if (typeof d.html !== 'string') d.html = SD.textToHtml(d.text);
+        d.about = Array.isArray(d.about) ? d.about : [];
         return;
       }
       if (d.kind === 'storyline') { d.name = d.name || 'Storyline'; SD.normalizeStoryline(d); return; }
@@ -184,11 +285,14 @@
       d.kind = 'script';
       if (!SD.SCRIPT_TYPES[d.scriptType]) d.scriptType = 'screenplay';
       d.name = d.name || SD.SCRIPT_TYPES[d.scriptType].label;
-      d.titlePage = Object.assign({ enabled: true, title: '', credit: 'Written by', author: '', source: '', draftDate: '', contact: '' }, d.titlePage || {});
+      d.titlePage = Object.assign({ enabled: true, title: '', episode: '', credit: 'Written by', author: '', source: '', draftDate: '', contact: '' }, d.titlePage || {});
       if (!Array.isArray(d.elements) || !d.elements.length) d.elements = [{ id: SD.uid(), type: SD.SCRIPT_TYPES[d.scriptType].sceneType, text: '' }];
       d.elements.forEach((e) => {
         e.id = e.id || SD.uid(); e.type = e.type || 'action'; e.text = e.text == null ? '' : String(e.text);
         if (e.comments && !Array.isArray(e.comments)) delete e.comments;
+        if (e.dual && e.type !== 'character') delete e.dual;
+        if (e.temp != null && !(e.temp >= 0 && e.temp <= 10)) delete e.temp;
+        if (e.fmt) { if (Array.isArray(e.fmt)) setFmt(e, e.fmt.filter((r) => Array.isArray(r) && r.length === 3).map((r) => r.map(Number))); else delete e.fmt; }
       });
     });
     return p;
@@ -255,16 +359,48 @@
 
   // ---------- page estimation (12pt Courier, 6 lines per inch) ----------
   SD.LINES_PER_PAGE = 54;
-  SD.WIDTHS = { scene: 60, action: 60, character: 38, parenthetical: 24, dialogue: 35, transition: 60, shot: 60, general: 60, sound: 60, music: 60, page: 60, panel: 60, caption: 50, sfx: 50 };
-  SD.SPACE_BEFORE = { scene: 2, action: 1, character: 1, parenthetical: 0, dialogue: 0, transition: 1, shot: 1, general: 1, sound: 1, music: 1, page: 3, panel: 1, caption: 1, sfx: 1 };
+  SD.WIDTHS = { act: 60, scene: 60, action: 60, character: 38, parenthetical: 24, dialogue: 35, transition: 60, shot: 60, general: 60, sound: 60, music: 60, page: 60, panel: 60, caption: 50, sfx: 50 };
+  SD.SPACE_BEFORE = { act: 3, scene: 2, action: 1, character: 1, parenthetical: 0, dialogue: 0, transition: 1, shot: 1, general: 1, sound: 1, music: 1, page: 3, panel: 1, caption: 1, sfx: 1 };
+
+  // Dual dialogue: a character cue with e.dual is spoken at the same time as the speech before it.
+  SD.SPEECH_TYPES = new Set(['parenthetical', 'dialogue']);
+  SD.speechEnd = (els, i) => { let k = i + 1; while (k < els.length && SD.SPEECH_TYPES.has(els[k].type)) k++; return k; };
+  SD.canBeDual = (els, i) => !!els[i] && els[i].type === 'character' && i > 0 && SD.SPEECH_TYPES.has(els[i - 1].type);
+  // Group elements for side-by-side layout: [{ pair: [leftEls, rightEls] } | element]
+  SD.dualGroups = (els) => {
+    const out = [];
+    for (let i = 0; i < els.length; i++) {
+      const e = els[i];
+      if (e.type === 'character') {
+        const j = SD.speechEnd(els, i);
+        if (els[j] && els[j].type === 'character' && els[j].dual) {
+          const k = SD.speechEnd(els, j);
+          out.push({ pair: [els.slice(i, j), els.slice(j, k)] });
+          i = k - 1;
+          continue;
+        }
+      }
+      out.push(e);
+    }
+    return out;
+  };
 
   SD.estimate = (doc) => {
     const els = doc.elements;
     const lineAt = new Array(els.length);
     let line = 0;
     const av = doc.scriptType === 'av';
+    let lastCue = null, dualMax = null;
     for (let i = 0; i < els.length; i++) {
       const e = els[i];
+      // the second speech of a dual pair sits beside the first, so it adds no extra lines
+      if (dualMax != null && !SD.SPEECH_TYPES.has(e.type)) { line = Math.max(line, dualMax); dualMax = null; }
+      if (e.type === 'character' && e.dual && lastCue != null && i > 0 && SD.SPEECH_TYPES.has(els[i - 1].type)) {
+        dualMax = line;
+        lineAt[i] = lastCue;
+        line = lastCue + SD.wrapLines(e.text, SD.WIDTHS.character).length;
+        continue;
+      }
       if (av && (SD.AV_LEFT.has(e.type) || SD.AV_RIGHT.has(e.type))) {
         const prev = els[i - 1];
         const n = SD.wrapLines(e.text, 28).length;
@@ -276,8 +412,11 @@
       }
       if (i > 0) line += SD.SPACE_BEFORE[e.type] ?? 1;
       lineAt[i] = line;
-      line += SD.wrapLines(e.text, SD.WIDTHS[e.type] || 60).length;
+      if (e.type === 'character') lastCue = line;
+      const n = SD.wrapLines(e.text, SD.WIDTHS[e.type] || 60).length;
+      line += doc.scriptType === 'sitcom' && (e.type === 'dialogue' || e.type === 'action') ? n * 2 - 1 : n;
     }
+    if (dualMax != null) line = Math.max(line, dualMax);
     return { totalLines: line, pages: Math.max(1, Math.ceil(line / SD.LINES_PER_PAGE)), lineAt };
   };
 

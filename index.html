@@ -4,13 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Scriptdesk</title>
-  <meta name="description" content="A free, offline-friendly scriptwriting tool for screenplays, stage plays, audio plays and comics. Your files stay on your computer.">
+  <meta name="description" content="A free, offline-friendly scriptwriting tool for screenplays, TV, stage plays, audio plays and comics. Your files stay on your computer.">
+  <meta name="theme-color" content="#a8432c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a8432c'/%3E%3Ctext x='16' y='23' font-family='Courier New,monospace' font-weight='700' font-size='20' text-anchor='middle' fill='white'%3ES%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap">
-  <link rel="stylesheet" href="css/app.css?v=5">
-  <link rel="stylesheet" href="css/script.css?v=5">
+  <link rel="stylesheet" href="css/app.css?v=8">
+  <link rel="stylesheet" href="css/script.css?v=8">
   <style id="page-size-style">@page { size: letter; }</style>
 </head>
 <body>
@@ -21,7 +26,19 @@
       <input id="project-title" class="project-title" spellcheck="false" aria-label="Project title" title="Project title">
       <div id="save-state" class="save-state"></div>
       <nav class="menu" aria-label="File">
-        <button class="btn ghost" data-action="new" title="New project">New</button>
+        <div class="dropdown">
+          <button class="btn ghost" data-dropdown aria-haspopup="true" title="New project or an example">New ▾</button>
+          <div class="dropdown-menu" role="menu">
+            <button class="menu-item" data-action="new">Blank project</button>
+            <div class="menu-sep"></div>
+            <div class="menu-label">Examples to explore</div>
+            <button class="menu-item" data-action="example" data-file="examples/the-last-ferry.scriptdesk" data-name="The Last Ferry (example).scriptdesk">🎬 Short film — everything filled in</button>
+            <button class="menu-item" data-action="example" data-file="examples/night-shift-pilot.scriptdesk" data-name="Night Shift (example).scriptdesk">📡 TV drama pilot</button>
+            <button class="menu-item" data-action="example" data-file="examples/the-flatmates.scriptdesk" data-name="The Flatmates (example).scriptdesk">🛋️ Sitcom (multi-camera)</button>
+            <button class="menu-item" data-action="example" data-file="examples/the-lantern.scriptdesk" data-name="The Lantern (example).scriptdesk">🎙️ Audio play</button>
+            <button class="menu-item" data-action="example" data-file="examples/the-cartographer.fountain" data-name="The Cartographer.fountain">📄 A Fountain file (plain-text screenplay)</button>
+          </div>
+        </div>
         <button class="btn ghost" data-action="open" title="Open a project, or import .celtx / .fountain / .fdx (Ctrl+O)">Open…</button>
         <button class="btn primary" data-action="save" title="Save project file (Ctrl+S)">Save</button>
         <div class="dropdown">
@@ -33,9 +50,13 @@
             <button class="menu-item" data-action="export-fdx">Final Draft (.fdx)</button>
             <button class="menu-item" data-action="export-txt">Plain text (.txt)</button>
             <div class="menu-sep"></div>
+            <button class="menu-item" data-action="review-copy">Review copy for a reader (.html)…</button>
+            <div class="menu-sep"></div>
             <button class="menu-item" data-action="saveas">Save project as…<span class="kbd-hint">Ctrl+Shift+S</span></button>
           </div>
         </div>
+        <button class="icon-btn" data-action="search" title="Search the whole project (Ctrl+Shift+F)" aria-label="Search">🔍</button>
+        <button class="btn ghost" id="install-btn" data-action="install" hidden title="Install Scriptdesk as an app that works offline">Install app</button>
         <button class="goal-chip" id="goal-chip" data-action="goals" title="Writing goals and sprint timer">⏱</button>
         <button class="icon-btn" data-action="settings" title="Settings" aria-label="Settings">⚙</button>
         <button class="icon-btn" data-action="help" title="Help & shortcuts" aria-label="Help">?</button>
@@ -54,14 +75,23 @@
                 <button class="menu-item" data-action="add-stageplay">🎭 Stage Play</button>
                 <button class="menu-item" data-action="add-audioplay">🎙️ Audio Play</button>
                 <button class="menu-item" data-action="add-comic">💬 Comic Book</button>
+                <button class="menu-item" data-action="add-teleplay">📡 TV Drama (single camera)</button>
+                <button class="menu-item" data-action="add-sitcom">🛋️ Sitcom (multi-camera)</button>
                 <button class="menu-item" data-action="add-av">📺 AV Script (video / audio)</button>
                 <div class="menu-sep"></div>
                 <button class="menu-item" data-action="add-storyline">〰️ Storyline (character flow)</button>
                 <button class="menu-item" data-action="add-storyboard">🎞️ Storyboard</button>
                 <button class="menu-item" data-action="add-beatboard">🧭 Beat Board</button>
                 <button class="menu-item" data-action="add-sketch">📐 Sketch (camera &amp; set plan)</button>
+                <button class="menu-item" data-action="add-timeline">⏳ Timeline (story order vs. plot order)</button>
+                <button class="menu-item" data-action="add-relations">🕸️ Relationship Map</button>
+                <button class="menu-item" data-action="add-moodboard">🎨 Mood Board</button>
                 <button class="menu-item" data-action="add-schedule">📅 Production Schedule</button>
+                <button class="menu-item" data-action="add-locmap">🗺️ Location Map</button>
                 <button class="menu-item" data-action="add-note">📝 Notes</button>
+                <button class="menu-item" data-action="add-budget">💶 Budget</button>
+                <div class="menu-sep"></div>
+                <button class="menu-item" data-action="add-folder">📁 Folder</button>
               </div>
             </div>
           </div>
@@ -99,17 +129,24 @@
   <div id="modal-root"></div>
   <div id="toasts" aria-live="polite"></div>
   <div class="drop-overlay">Drop a .scriptdesk, .celtx, .fountain or .fdx file to open it</div>
-  <input type="file" id="file-input" accept=".scriptdesk,.json,.celtx,.fountain,.spmd,.txt,.fdx" hidden>
+  <input type="file" id="file-input" accept=".scriptdesk,.scriptdesk-review,.json,.celtx,.fountain,.spmd,.txt,.fdx" hidden>
 
-  <script src="js/formats.js?v=5"></script>
-  <script src="js/catalog.js?v=5"></script>
-  <script src="js/storyline.js?v=5"></script>
-  <script src="js/storyboard.js?v=5"></script>
-  <script src="js/beatboard.js?v=5"></script>
-  <script src="js/sketch.js?v=5"></script>
-  <script src="js/schedule.js?v=5"></script>
-  <script src="js/formats-io.js?v=5"></script>
-  <script src="js/editor.js?v=5"></script>
-  <script src="js/app.js?v=5"></script>
+  <script src="js/formats.js?v=8"></script>
+  <script src="js/catalog.js?v=8"></script>
+  <script src="js/storyline.js?v=8"></script>
+  <script src="js/storyboard.js?v=8"></script>
+  <script src="js/beatboard.js?v=8"></script>
+  <script src="js/sketch.js?v=8"></script>
+  <script src="js/schedule.js?v=8"></script>
+  <script src="js/budget.js?v=8"></script>
+  <script src="js/timeline.js?v=8"></script>
+  <script src="js/relations.js?v=8"></script>
+  <script src="js/moodboard.js?v=8"></script>
+  <script src="js/locmap.js?v=8"></script>
+  <script src="js/review.js?v=8"></script>
+  <script src="js/touch.js?v=8"></script>
+  <script src="js/formats-io.js?v=8"></script>
+  <script src="js/editor.js?v=8"></script>
+  <script src="js/app.js?v=8"></script>
 </body>
 </html>

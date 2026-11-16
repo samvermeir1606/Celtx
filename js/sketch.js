@@ -95,17 +95,18 @@
     }
     const style = opts.forExport ? `<style>.sk-label{font:600 14px system-ui,sans-serif;fill:#333}.sk-hit{fill:transparent;stroke:transparent}</style>` : '';
     const sel = opts.selection;
-    const items = d.items.map((it) => itemSVG(it, sel)).join('');
+    const setup = opts.setup || null;
+    const items = d.items.filter((it) => !it.setup || it.setup === setup).map((it) => itemSVG(it, sel)).join('');
     const handles = opts.forExport ? '' : handlesSVG(d.items.find((x) => x.id === sel));
     const draft = opts.draft ? itemSVG(opts.draft, null) : '';
     return `<svg xmlns="http://www.w3.org/2000/svg" class="sk-svg" viewBox="0 0 ${w} ${hh}" width="${w}" height="${hh}">${style}<rect class="sk-bg" width="${w}" height="${hh}" fill="#fff"/>${grid}${items}${draft}${handles}</svg>`;
   };
 
   // PNG of a sketch, for the storyboard's camera setup diagram and for downloading
-  SD.sketchToPng = async (d, maxW = 1200) => {
+  SD.sketchToPng = async (d, maxW = 1200, setup = view.setup[d.id]) => {
     const w = d.settings.w || W0, hh = d.settings.h || H0;
     const k = Math.min(1, maxW / w);
-    const url = URL.createObjectURL(new Blob([SD.sketchSVG(d, { forExport: true })], { type: 'image/svg+xml' }));
+    const url = URL.createObjectURL(new Blob([SD.sketchSVG(d, { forExport: true, setup })], { type: 'image/svg+xml' }));
     try {
       const im = new Image();
       await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = url; });
@@ -119,25 +120,60 @@
   };
 
   // ---------- document kind ----------
-  const view = { sel: null, tool: 'select', zoom: 1, hist: {} };
+  const view = { sel: null, tool: 'select', zoom: 1, hist: {}, setup: {} };
+  // cameras, lights, mics, actors, marks and movement arrows belong to a setup; the rest is the set
+  const PER_SETUP = new Set(['camera', 'light', 'mic', 'person', 'mark', 'arrow']);
+  const activeSetup = (d) => (d.setups.some((x) => x.id === view.setup[d.id]) ? view.setup[d.id] : null);
+
+  // Setups: one set, a layout of cameras and actors for each shot (used by the storyboard).
+  SD.sketchSetups = {
+    create(d, name, copyFrom) {
+      const st = { id: SD.uid(), name: name || 'Setup ' + (d.setups.length + 1) };
+      d.setups.push(st);
+      if (copyFrom) for (const it of d.items.filter((x) => x.setup === copyFrom)) d.items.push(Object.assign(JSON.parse(JSON.stringify(it)), { id: SD.uid(), setup: st.id }));
+      view.setup[d.id] = st.id;
+      return st;
+    },
+    open(docId, setupId) {
+      const U = SD.ui;
+      view.setup[docId] = setupId || null;
+      view.sel = null;
+      U.syncEditor();
+      U.state.docId = docId;
+      U.renderDocList();
+      U.renderView();
+    },
+    usedBy(d, setupId) {
+      const out = [];
+      for (const sb of SD.ui.project.documents) {
+        if (sb.kind !== 'storyboard') continue;
+        const nums = SD.storyboardNumbers(SD.ui.project, sb);
+        for (const sq of sb.sequences) sq.shots.forEach((x, i) => { if (x.setupRef && x.setupRef.sketch === d.id && x.setupRef.setup === setupId) out.push(nums.get(sq.id) + SD.shotLetters(i)); });
+      }
+      return out;
+    },
+  };
   const hist = (d) => (view.hist[d.id] = view.hist[d.id] || { undo: [], redo: [] });
   const snap = (d) => { const hs = hist(d); hs.undo.push(JSON.stringify(d.items)); if (hs.undo.length > 80) hs.undo.shift(); hs.redo.length = 0; };
 
   const K = {
     icon: '📐',
     label: 'Sketch',
-    create(project, name) { return { id: SD.uid(), kind: 'sketch', name, items: [], settings: { grid: true, snap: true, w: W0, h: H0 } }; },
+    create(project, name) { return { id: SD.uid(), kind: 'sketch', name, items: [], setups: [], settings: { grid: true, snap: true, w: W0, h: H0 } }; },
     normalize(d) {
       d.items = Array.isArray(d.items) ? d.items.filter((x) => x && x.type) : [];
+      d.setups = (Array.isArray(d.setups) ? d.setups : []).filter((x) => x && x.id).map((x) => ({ id: x.id, name: x.name || 'Setup' }));
+      const ids = new Set(d.setups.map((x) => x.id));
+      for (const it of d.items) if (it.setup && !ids.has(it.setup)) delete it.setup;
       d.settings = Object.assign({ grid: true, snap: true, w: W0, h: H0 }, d.settings || {});
       for (const it of d.items) { it.id = it.id || SD.uid(); for (const k of ['x', 'y', 'x1', 'y1', 'x2', 'y2', 'w', 'h', 'rot', 'scale', 'size']) if (it[k] != null) it[k] = +it[k] || 0; }
     },
     hasContent: (d) => d.items.length > 0,
-    status: (d) => `Sketch  ·  ${d.items.length} objects  ·  drag from the palette, Delete removes, Ctrl+Z undoes`,
+    status: (d) => `Sketch  ·  ${d.items.filter((x) => !x.setup).length} set pieces  ·  ${d.setups.length} setup${d.setups.length === 1 ? '' : 's'}  ·  Delete removes, Ctrl+Z undoes`,
     navigator(d) {
       return {
         label: 'Objects', empty: 'Add cameras, actors and set pieces from the palette.',
-        items: d.items.map((it, i) => ({ num: i + 1, text: it.label || (SYMBOLS[it.type] || SHAPES[it.type] || {}).label || it.type, current: view.sel === it.id, onclick: () => { view.sel = it.id; SD.ui.renderView(); } })),
+        items: d.items.filter((it) => !it.setup || it.setup === activeSetup(d)).map((it, i) => ({ num: i + 1, text: it.label || (SYMBOLS[it.type] || SHAPES[it.type] || {}).label || it.type, current: view.sel === it.id, onclick: () => { view.sel = it.id; SD.ui.renderView(); } })),
       };
     },
     toolbar(d) {
@@ -188,13 +224,29 @@
     const canvas = h('div', { class: 'sk-canvas' });
     const panel = h('aside', { class: 'story-panel sk-panel' });
     const palette = h('div', { class: 'sk-palette' });
-    root.append(h('div', { class: 'sk' }, palette, canvas, panel));
+    const setupBar = h('div', { class: 'sk-setups' });
+    root.append(h('div', { class: 'sk' }, palette, h('div', { class: 'sk-main' }, setupBar, canvas), panel));
+    const drawSetups = () => {
+      const cur = activeSetup(d);
+      const used = cur ? SD.sketchSetups.usedBy(d, cur) : [];
+      const choose = (id) => { view.setup[d.id] = id || null; view.sel = null; draw(); drawPanel(); drawSetups(); U.renderNavigator(); U.renderStatus(); };
+      setupBar.replaceChildren(
+        h('span', { class: 'muted small' }, 'Showing'),
+        h('select', { class: 'select small', title: 'The set is shared; each setup adds its own cameras, actors and arrows', onchange: (e) => choose(e.target.value) },
+          h('option', { value: '' }, 'The set only (shared walls & furniture)'),
+          d.setups.map((x) => { const u = SD.sketchSetups.usedBy(d, x.id).filter((n) => !x.name.includes(n)); return h('option', { value: x.id, selected: x.id === cur }, x.name + (u.length ? ' · shot ' + u.join(', ') : '')); })),
+        h('button', { class: 'btn small', title: 'A new layout of cameras and actors on the same set', onclick: () => { SD.sketchSetups.create(d); changed(); choose(view.setup[d.id]); } }, '+ Setup'),
+        cur ? h('button', { class: 'btn ghost small', title: 'Copy this setup to start the next shot', onclick: () => { SD.sketchSetups.create(d, d.setups.find((x) => x.id === cur).name + ' (copy)', cur); changed(); choose(view.setup[d.id]); } }, 'Duplicate') : null,
+        cur ? h('button', { class: 'btn ghost small', onclick: async () => { const st = d.setups.find((x) => x.id === cur); const n = await U.promptText('Rename setup', st.name); if (n && n.trim()) { st.name = n.trim(); changed(); drawSetups(); } } }, 'Rename') : null,
+        cur ? h('button', { class: 'btn ghost small danger', onclick: async () => { const ok = await U.modal({ title: 'Delete this setup?', body: 'Its cameras, actors and arrows are deleted. The set stays.' + (used.length ? ` Shot ${used.join(', ')} will lose its diagram.` : ''), buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, primary: true, danger: true }] }); if (!ok) return; snap(d); d.items = d.items.filter((x) => x.setup !== cur); d.setups = d.setups.filter((x) => x.id !== cur); changed(); choose(null); } }, 'Delete') : null,
+        h('span', { class: 'muted small sk-used' }, cur ? (used.length ? 'Used by storyboard shot ' + used.join(', ') : 'Not used by a storyboard shot yet') : d.setups.length ? 'Pick a setup to place cameras and actors for one shot.' : 'Draw the set, then add a setup for each shot.'));
+    };
     const sel = () => d.items.find((x) => x.id === view.sel) || null;
     const g = (v) => (d.settings.snap ? Math.round(v / 10) * 10 : Math.round(v));
     let draft = null, act = null;
 
     const draw = () => {
-      canvas.innerHTML = SD.sketchSVG(d, { selection: view.sel, draft });
+      canvas.innerHTML = SD.sketchSVG(d, { selection: view.sel, draft, setup: activeSetup(d) });
       applyZoom(d);
       canvas.classList.toggle('drawing', view.tool !== 'select');
     };
@@ -216,7 +268,8 @@
     const addSymbol = (type) => {
       snap(d);
       const c = center();
-      const it = { id: SD.uid(), type, x: c.x + (d.items.length % 5) * 10, y: c.y + (d.items.length % 5) * 10, rot: type === 'door' || type === 'window' ? 0 : 0, scale: 1, color: SYMBOLS[type].color, label: '' };
+      const it = { id: SD.uid(), type, x: c.x + (d.items.length % 5) * 10, y: c.y + (d.items.length % 5) * 10, rot: 0, scale: 1, color: SYMBOLS[type].color, label: '' };
+      if (PER_SETUP.has(type) && activeSetup(d)) it.setup = activeSetup(d);
       d.items.push(it);
       view.tool = 'select';
       changed(); drawPalette(); select(it.id);
@@ -294,6 +347,7 @@
       if (isLine(it.type) || it.type === 'rect' || it.type === 'ellipse') kids.push(sec(h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: it.type === 'arrow' ? it.dashed !== false : !!it.dashed, onchange: (e) => set('dashed', e.target.checked) }), ' Dashed')));
       if (it.type === 'image') kids.push(sec(h('label', { class: 'lbl' }, 'See-through'), h('input', { type: 'range', min: 0.15, max: 1, step: 0.05, value: it.opacity == null ? 1 : it.opacity, oninput: (e) => set('opacity', +e.target.value) }), h('p', { class: 'muted small' }, 'Pictures sit at the back, so you can draw over a floor plan or a photo of the location.')));
       if (it.type === 'text') kids.push(sec(h('label', { class: 'lbl' }, 'Size'), h('input', { type: 'range', min: 10, max: 60, value: it.size || 18, oninput: (e) => set('size', +e.target.value) })));
+      if (activeSetup(d) || it.setup) kids.push(sec(h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !!it.setup, onchange: (e) => { if (e.target.checked) it.setup = activeSetup(d); else delete it.setup; changed(); draw(); } }), ' Only in this setup'), h('p', { class: 'muted small' }, it.setup ? 'Other setups don’t show it.' : 'Part of the set: every setup shows it.')));
       kids.push(sec(h('div', { class: 'row-gap' },
         h('button', { class: 'btn small', title: 'Ctrl+D', onclick: () => duplicate() }, 'Duplicate'),
         h('button', { class: 'btn small', title: 'Bring to front', onclick: () => { snap(d); d.items = d.items.filter((x) => x !== it).concat(it); changed(); draw(); } }, 'To front'),
@@ -385,6 +439,7 @@
         if (big) {
           snap(d);
           const it = Object.assign({}, draft, { id: SD.uid() });
+          if (PER_SETUP.has(it.type) && activeSetup(d)) it.setup = activeSetup(d);
           if (it.type === 'rect' || it.type === 'ellipse') { if (it.w < 0) { it.x += it.w; it.w = -it.w; } if (it.h < 0) { it.y += it.h; it.h = -it.h; } }
           d.items.push(it);
           view.sel = it.id;
@@ -425,6 +480,7 @@
     };
 
     drawPalette();
+    drawSetups();
     draw();
     drawPanel();
     if (!view.zoomSet) { view.zoomSet = true; requestAnimationFrame(() => fit(d)); setTimeout(() => fit(d), 50); }

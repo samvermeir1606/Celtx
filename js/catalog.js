@@ -185,6 +185,36 @@
     music: [{ title: 'Music', fields: [{ key: 'composer', label: 'Composer / artist' }, { key: 'source', label: 'Source / file' }, { key: 'rights', label: 'Rights / licence' }, { key: 'cue', label: 'Cue notes', type: 'textarea', wide: true }] }],
   };
 
+  // Prices for the budget. Characters cost what their actor costs.
+  SD.PRICE_UNITS = ['per shoot day', 'per week', 'one-off', 'per item'];
+  SD.defaultPriceUnit = (category) => (['actor', 'crew', 'extras', 'stunts', 'location', 'vehicle', 'animal', 'equipment', 'set'].includes(category) ? (category === 'set' ? 'one-off' : 'per shoot day') : 'one-off');
+  for (const c of SD.CATEGORIES) {
+    if (c.id === 'character') continue;
+    const form = (SD.CATALOG_FORMS[c.id] = (SD.CATALOG_FORMS[c.id] || generic).slice());
+    if (c.id === 'location') form.push({ title: 'On the map', fields: [{ key: 'lat', label: 'Latitude' }, { key: 'lng', label: 'Longitude' }] });
+    form.push({
+      title: 'Budget', fields: [
+        { key: 'price', label: c.id === 'actor' || c.id === 'crew' ? 'Fee' : c.id === 'location' ? 'Rent' : c.id === 'set' ? 'Build cost' : 'Price' },
+        { key: 'priceUnit', label: 'Price is', type: 'select', options: SD.PRICE_UNITS },
+        { key: 'budgetNotes', label: 'Budget notes', type: 'textarea', wide: true },
+      ],
+    });
+  }
+  // "€ 1.250,50", "1,250.50", "250" -> number
+  SD.parseMoney = (v) => {
+    let t = String(v == null ? '' : v).replace(/[^\d.,-]/g, '');
+    if (!t) return 0;
+    const lc = t.lastIndexOf(','), ld = t.lastIndexOf('.');
+    if (lc > -1 && ld > -1) t = lc > ld ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+    else if (lc > -1) t = /,\d{1,2}$/.test(t) ? t.replace(',', '.') : t.replace(/,/g, '');
+    else if ((t.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(t)) t = t.replace(/\./g, '');
+    return Math.max(0, parseFloat(t) || 0);
+  };
+  SD.itemPrice = (it) => {
+    const f = it.fields || {};
+    return { price: SD.parseMoney(f.price || f.cost || f.rate || ''), unit: f.priceUnit || SD.defaultPriceUnit(it.category), set: !!String(f.price || f.cost || f.rate || '').trim() };
+  };
+
   SD.formFor = (category) => SD.CATALOG_FORMS[category] || generic;
 
   SD.newCatalogItem = (category, name = '') => ({

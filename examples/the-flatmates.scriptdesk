@@ -1,0 +1,208 @@
+{
+ "app": "scriptdesk",
+ "version": 1,
+ "title": "The Flatmates",
+ "created": "2026-11-16T13:53:04.740Z",
+ "modified": "2026-11-16T13:53:04.740Z",
+ "settings": {
+  "pageSize": "letter",
+  "sceneNumbers": false,
+  "boldScenes": false
+ },
+ "documents": [
+  {
+   "id": "ex0007o",
+   "kind": "script",
+   "scriptType": "sitcom",
+   "name": "The Flatmates — “The Plant”",
+   "titlePage": {
+    "enabled": true,
+    "title": "The Flatmates",
+    "episode": "Episode 3\n“The Plant”",
+    "credit": "Written by",
+    "author": "A Scriptdesk example",
+    "source": "",
+    "draftDate": "",
+    "contact": ""
+   },
+   "elements": [
+    {
+     "id": "ex0007q",
+     "type": "act",
+     "text": "ACT ONE"
+    },
+    {
+     "id": "ex0007r",
+     "type": "scene",
+     "text": "INT. FLAT - KITCHEN - MORNING"
+    },
+    {
+     "id": "ex0007s",
+     "type": "action",
+     "text": "Dishes everywhere. A sad, nearly dead house plant on the windowsill. LIV (late 20s) stares at it."
+    },
+    {
+     "id": "ex0007t",
+     "type": "character",
+     "text": "LIV"
+    },
+    {
+     "id": "ex0007u",
+     "type": "dialogue",
+     "text": "Sam. The plant."
+    },
+    {
+     "id": "ex0007v",
+     "type": "character",
+     "text": "SAM"
+    },
+    {
+     "id": "ex0007w",
+     "type": "dialogue",
+     "text": "What about the plant?"
+    },
+    {
+     "id": "ex0007x",
+     "type": "character",
+     "text": "LIV"
+    },
+    {
+     "id": "ex0007y",
+     "type": "dialogue",
+     "text": "It's dead, Sam."
+    },
+    {
+     "id": "ex0007z",
+     "type": "character",
+     "text": "SAM"
+    },
+    {
+     "id": "ex00080",
+     "type": "parenthetical",
+     "text": "(offended)"
+    },
+    {
+     "id": "ex00081",
+     "type": "dialogue",
+     "text": "It's resting.",
+     "fmt": [
+      [
+       5,
+       12,
+       2
+      ]
+     ]
+    },
+    {
+     "id": "ex00082",
+     "type": "action",
+     "text": "SAM (late 20s) waters it with cold coffee."
+    },
+    {
+     "id": "ex00083",
+     "type": "character",
+     "text": "LIV"
+    },
+    {
+     "id": "ex00084",
+     "type": "dialogue",
+     "text": "My mother gave me that plant. She's coming on Saturday."
+    },
+    {
+     "id": "ex00085",
+     "type": "character",
+     "text": "SAM"
+    },
+    {
+     "id": "ex00086",
+     "type": "dialogue",
+     "text": "Then we have four days to perform a miracle."
+    },
+    {
+     "id": "ex00087",
+     "type": "scene",
+     "text": "INT. GARDEN CENTRE - DAY"
+    },
+    {
+     "id": "ex00088",
+     "type": "action",
+     "text": "Sam holds up two identical plants to a bored SHOP ASSISTANT (20s)."
+    },
+    {
+     "id": "ex00089",
+     "type": "character",
+     "text": "SAM"
+    },
+    {
+     "id": "ex0008a",
+     "type": "dialogue",
+     "text": "Which one looks more like it's been loved for three years?"
+    },
+    {
+     "id": "ex0008b",
+     "type": "character",
+     "text": "SHOP ASSISTANT"
+    },
+    {
+     "id": "ex0008c",
+     "type": "dialogue",
+     "text": "They're both from Tuesday."
+    },
+    {
+     "id": "ex0008d",
+     "type": "character",
+     "text": "SAM"
+    },
+    {
+     "id": "ex0008e",
+     "type": "dialogue",
+     "text": "Perfect. Wrap the sadder one."
+    },
+    {
+     "id": "ex0008f",
+     "type": "act",
+     "text": "END OF ACT ONE"
+    }
+   ]
+  }
+ ],
+ "catalog": [
+  {
+   "id": "ex0008i",
+   "category": "character",
+   "name": "LIV",
+   "description": "",
+   "tags": "",
+   "fields": {},
+   "links": {},
+   "media": [],
+   "custom": []
+  },
+  {
+   "id": "ex0008j",
+   "category": "character",
+   "name": "SAM",
+   "description": "",
+   "tags": "",
+   "fields": {},
+   "links": {},
+   "media": [],
+   "custom": []
+  },
+  {
+   "id": "ex0008k",
+   "category": "prop",
+   "name": "Nearly dead house plant",
+   "description": "",
+   "tags": "",
+   "fields": {
+    "price": "12",
+    "priceUnit": "one-off"
+   },
+   "links": {},
+   "media": [],
+   "custom": []
+  }
+ ],
+ "folders": []
+}

@@ -1,0 +1,207 @@
+{
+ "app": "scriptdesk",
+ "version": 1,
+ "title": "The Lantern",
+ "created": "2026-11-16T13:53:04.741Z",
+ "modified": "2026-11-16T13:53:04.741Z",
+ "settings": {
+  "pageSize": "letter",
+  "sceneNumbers": false,
+  "boldScenes": false
+ },
+ "documents": [
+  {
+   "id": "ex0008n",
+   "kind": "script",
+   "scriptType": "audioplay",
+   "name": "The Lantern",
+   "titlePage": {
+    "enabled": true,
+    "title": "The Lantern",
+    "episode": "",
+    "credit": "An audio drama by",
+    "author": "A Scriptdesk example",
+    "source": "",
+    "draftDate": "",
+    "contact": ""
+   },
+   "elements": [
+    {
+     "id": "ex0008p",
+     "type": "scene",
+     "text": "SCENE 1. A LIGHTHOUSE. NIGHT."
+    },
+    {
+     "id": "ex0008q",
+     "type": "sound",
+     "text": "WIND HOWLS AROUND STONE. A HEAVY DOOR SLAMS."
+    },
+    {
+     "id": "ex0008r",
+     "type": "music",
+     "text": "A LOW CELLO NOTE, HELD."
+    },
+    {
+     "id": "ex0008s",
+     "type": "action",
+     "text": "Footsteps on an iron spiral staircase, climbing, slowing."
+    },
+    {
+     "id": "ex0008t",
+     "type": "character",
+     "text": "GRETA"
+    },
+    {
+     "id": "ex0008u",
+     "type": "parenthetical",
+     "text": "(out of breath)"
+    },
+    {
+     "id": "ex0008v",
+     "type": "dialogue",
+     "text": "Two hundred and twelve steps. Every night for thirty years, and I still count them."
+    },
+    {
+     "id": "ex0008w",
+     "type": "sound",
+     "text": "A MATCH STRIKES. A HISS AS THE LAMP CATCHES."
+    },
+    {
+     "id": "ex0008x",
+     "type": "character",
+     "text": "GRETA"
+    },
+    {
+     "id": "ex0008y",
+     "type": "dialogue",
+     "text": "There you are, old friend. Let's see who's out there tonight."
+    },
+    {
+     "id": "ex0008z",
+     "type": "sound",
+     "text": "FAINT, FAR OFF — A SHIP'S HORN. ONCE. TWICE."
+    },
+    {
+     "id": "ex00090",
+     "type": "character",
+     "text": "GRETA"
+    },
+    {
+     "id": "ex00091",
+     "type": "parenthetical",
+     "text": "(sharp)"
+    },
+    {
+     "id": "ex00092",
+     "type": "dialogue",
+     "text": "That's not a ship I know."
+    },
+    {
+     "id": "ex00093",
+     "type": "scene",
+     "text": "SCENE 2. THE LANTERN ROOM. LATER."
+    },
+    {
+     "id": "ex00094",
+     "type": "sound",
+     "text": "THE LAMP TURNS WITH A SLOW MECHANICAL TICK."
+    },
+    {
+     "id": "ex00095",
+     "type": "character",
+     "text": "RADIO VOICE"
+    },
+    {
+     "id": "ex00096",
+     "type": "parenthetical",
+     "text": "(distorted, through static)"
+    },
+    {
+     "id": "ex00097",
+     "type": "dialogue",
+     "text": "Lighthouse... lighthouse, this is the Esperanza... we see your light... we've been seeing it for sixty years...",
+     "fmt": [
+      [
+       38,
+       47,
+       2
+      ]
+     ]
+    },
+    {
+     "id": "ex00098",
+     "type": "music",
+     "text": "THE CELLO RISES, UNEASY."
+    },
+    {
+     "id": "ex00099",
+     "type": "character",
+     "text": "GRETA"
+    },
+    {
+     "id": "ex0009a",
+     "type": "dialogue",
+     "text": "The Esperanza sank in nineteen sixty-four."
+    },
+    {
+     "id": "ex0009b",
+     "type": "sound",
+     "text": "STATIC SWALLOWS THE VOICE. ONLY WIND."
+    }
+   ]
+  }
+ ],
+ "catalog": [
+  {
+   "id": "ex0009e",
+   "category": "character",
+   "name": "GRETA",
+   "description": "The last lighthouse keeper on the coast.",
+   "tags": "",
+   "fields": {
+    "age": "60s"
+   },
+   "links": {},
+   "media": [],
+   "custom": []
+  },
+  {
+   "id": "ex0009f",
+   "category": "character",
+   "name": "RADIO VOICE",
+   "description": "",
+   "tags": "",
+   "fields": {},
+   "links": {},
+   "media": [],
+   "custom": []
+  },
+  {
+   "id": "ex0009g",
+   "category": "sound",
+   "name": "Wind and storm bed",
+   "description": "",
+   "tags": "",
+   "fields": {
+    "source": "Library"
+   },
+   "links": {},
+   "media": [],
+   "custom": []
+  },
+  {
+   "id": "ex0009h",
+   "category": "music",
+   "name": "Solo cello theme",
+   "description": "",
+   "tags": "",
+   "fields": {
+    "composer": "TBC"
+   },
+   "links": {},
+   "media": [],
+   "custom": []
+  }
+ ],
+ "folders": []
+}

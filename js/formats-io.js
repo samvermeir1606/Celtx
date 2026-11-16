@@ -24,10 +24,11 @@
       let prev = null;
       const ctr = { page: 0, panel: 0 };
       for (const e of doc.elements) {
-        const t = (e.text || '').trim();
+        const t = SD.fmtToMarkup(e.text || '', e.fmt).trim();
         if (!t && !['page', 'panel'].includes(e.type)) continue;
         let s;
         switch (e.type) {
+          case 'act': s = '> ' + t.toUpperCase() + ' <'; break;
           case 'scene': {
             const u = t.toUpperCase();
             s = SCENE_RE.test(u) ? u : '.' + u;
@@ -37,6 +38,7 @@
           case 'character': {
             s = t.toUpperCase();
             if (!/[A-Z]/.test(s.replace(/\(.*?\)/g, ''))) s = '@' + t;
+            if (e.dual) s += ' ^';
             break;
           }
           case 'parenthetical': s = t.startsWith('(') ? t : '(' + t + ')'; break;
@@ -100,11 +102,11 @@
         if (line.startsWith('!')) { els.push(el('action', line.slice(1).trim())); i++; continue; }
         if (/^\.[^.]/.test(line)) { els.push(el('scene', line.slice(1).replace(/\s*#[^#]*#\s*$/, '').trim())); i++; continue; }
         if (prevBlank && SCENE_RE.test(line)) { els.push(el('scene', line.replace(/\s*#[^#]*#\s*$/, ''))); i++; continue; }
-        if (line.startsWith('>') && line.endsWith('<')) { els.push(el('action', line.slice(1, -1).trim())); i++; continue; }
+        if (line.startsWith('>') && line.endsWith('<')) { const c = line.slice(1, -1).trim(); els.push(el(/^(END OF )?(ACT\b|TEASER|COLD OPEN|TAG\b|SHOW)/i.test(c) ? 'act' : 'action', c)); i++; continue; }
         if (line.startsWith('>')) { els.push(el('transition', line.slice(1).trim())); i++; continue; }
         if (prevBlank && nextBlank && /^[A-Z0-9 .\-']+TO:$/.test(line)) { els.push(el('transition', line)); i++; continue; }
         if (line.startsWith('@') || (prevBlank && !nextBlank && isUpper(line))) {
-          els.push(el('character', line.replace(/^@/, '').replace(/\s*\^\s*$/, '')));
+          els.push(el('character', line.replace(/^@/, '').replace(/\s*\^\s*$/, ''), /\^\s*$/.test(line) ? { dual: true } : null));
           i++;
           let dlg = [];
           const flush = () => { if (dlg.length) { els.push(el('dialogue', dlg.join(' '))); dlg = []; } };
@@ -120,6 +122,12 @@
         els.push(el('action', line));
         i++;
       }
+      for (const e of els) {
+        if (!/[*_]/.test(e.text)) continue;
+        const r = SD.markupToFmt(e.text);
+        e.text = r.text;
+        if (r.fmt.length) e.fmt = r.fmt;
+      }
       return { titlePage, elements: els.length ? els : [el('scene', '')] };
     },
   };
@@ -132,13 +140,28 @@
   SD.FDX = {
     export(doc) {
       const ctr = { page: 0, panel: 0 };
+      const STYLE = (f) => ['Bold', 'Italic', 'Underline'].filter((_, k) => f & (1 << k)).join('+');
       const paras = doc.elements.map((e) => {
-        const type = FDX_TYPES[e.type] || (e.type === 'page' ? 'Scene Heading' : 'Action');
-        const text = FDX_TYPES[e.type] ? e.text || '' : SD.displayText(doc.scriptType, e, ctr);
+        const type = e.type === 'act' ? (/^END OF/i.test(e.text || '') ? 'End of Act' : 'New Act') : FDX_TYPES[e.type] || (e.type === 'page' ? 'Scene Heading' : 'Action');
+        const plain = FDX_TYPES[e.type] || e.type === 'act';
+        const text = plain ? e.text || '' : SD.displayText(doc.scriptType, e, ctr);
         let extra = '';
         if (e.type === 'scene' && e.synopsis) extra = `\n      <SceneProperties><Summary><Paragraph><Text>${xmlEsc(e.synopsis)}</Text></Paragraph></Summary></SceneProperties>`;
-        return `    <Paragraph Type="${type}">${extra}\n      <Text>${xmlEsc(text)}</Text>\n    </Paragraph>`;
+        const texts = plain && e.fmt ? SD.fmtSegments(text, e.fmt).map(([t, f]) => `<Text${f ? ` Style="${STYLE(f)}"` : ''}>${xmlEsc(t)}</Text>`).join('') : `<Text>${xmlEsc(text)}</Text>`;
+        return `    <Paragraph Type="${type}">${extra}\n      ${texts}\n    </Paragraph>`;
       });
+      // Final Draft keeps dual dialogue inside <DualDialogue>
+      for (let i = doc.elements.length - 1; i >= 0; i--) {
+        const e = doc.elements[i];
+        if (!(e.type === 'character' && e.dual)) continue;
+        let a = i - 1;
+        while (a > 0 && SD.SPEECH_TYPES.has(doc.elements[a].type)) a--;
+        if (a < 0 || doc.elements[a].type !== 'character') continue;
+        const z = SD.speechEnd(doc.elements, i);
+        const inner = paras.slice(a, z).join('\n');
+        paras.splice(a, z - a, `    <Paragraph>\n      <DualDialogue>\n${inner}\n      </DualDialogue>\n    </Paragraph>`);
+        i = a;
+      }
       const tp = doc.titlePage || {};
       const tpLines = [];
       const center = (t) => `      <Paragraph Alignment="Center" Type="General"><Text>${xmlEsc(t)}</Text></Paragraph>`;
@@ -170,11 +193,34 @@ ${tpLines.join('\n')}
       const content = x.querySelector('FinalDraft > Content') || x.querySelector('Content');
       const els = [];
       if (content) {
+        const flat = [];
         for (const p of content.children) {
           if (p.tagName !== 'Paragraph') continue;
-          const type = FDX_BACK[(p.getAttribute('Type') || '').toLowerCase()] || 'action';
-          const text = Array.from(p.children).filter((c) => c.tagName === 'Text').map((t) => t.textContent).join('').replace(/\s*\n\s*/g, ' ');
+          const dd = [...p.children].find((c) => c.tagName === 'DualDialogue');
+          if (!dd) { flat.push(p); continue; }
+          let cues = 0;
+          for (const q of dd.children) {
+            if (q.tagName !== 'Paragraph') continue;
+            if ((q.getAttribute('Type') || '').toLowerCase() === 'character' && ++cues === 2) q.setAttribute('data-dual', '1');
+            flat.push(q);
+          }
+        }
+        for (const p of flat) {
+          const ptype = (p.getAttribute('Type') || '').toLowerCase();
+          const type = ptype === 'new act' || ptype === 'end of act' ? 'act' : FDX_BACK[ptype] || 'action';
+          let text = '';
+          const runs = [];
+          for (const t of Array.from(p.children).filter((c) => c.tagName === 'Text')) {
+            const piece = t.textContent.replace(/\s*\n\s*/g, ' ');
+            const st = (t.getAttribute('Style') || '').toLowerCase();
+            const f = (st.includes('bold') ? 1 : 0) | (st.includes('italic') ? 2 : 0) | (st.includes('underline') ? 4 : 0);
+            if (f && piece) runs.push([text.length, text.length + piece.length, f]);
+            text += piece;
+          }
           const e = el(type, text);
+          const fmt = SD.fmtClean(runs);
+          if (fmt.length) e.fmt = fmt;
+          if (p.getAttribute('data-dual')) e.dual = true;
           const sum = p.querySelector('SceneProperties Summary');
           if (sum && sum.textContent.trim()) e.synopsis = sum.textContent.trim();
           els.push(e);
@@ -345,6 +391,34 @@ ${tpLines.join('\n')}
     }
   }
 
+  // Text of a Celtx paragraph with whitespace collapsed, plus its formatting runs.
+  function textAndFmt(p) {
+    let text = '', lastSpace = true;
+    const runs = [];
+    const walk = (n, f) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) {
+          for (const ch of c.data) {
+            if (/\s/.test(ch)) { if (lastSpace) continue; text += ' '; lastSpace = true; }
+            else { text += ch; lastSpace = false; }
+            if (f) runs.push([text.length - 1, text.length, f]);
+          }
+        } else if (c.nodeType === 1) {
+          if (c.tagName === 'BR') { if (!lastSpace) { text += ' '; lastSpace = true; } continue; }
+          let g = f;
+          const t = c.tagName, st = c.getAttribute('style') || '';
+          if (t === 'B' || t === 'STRONG' || /font-weight:\s*(bold|[6-9]00)/i.test(st)) g |= 1;
+          if (t === 'I' || t === 'EM' || /font-style:\s*italic/i.test(st)) g |= 2;
+          if (t === 'U' || /underline/i.test(st)) g |= 4;
+          walk(c, g);
+        }
+      }
+    };
+    walk(p, 0);
+    if (text.endsWith(' ')) text = text.slice(0, -1);
+    return { text, fmt: SD.fmtClean(runs.filter((r) => r[1] <= text.length)) };
+  }
+
   const isBreakdownItem = (catalog, id) => {
     const it = catalog.find((c) => c.id === id);
     return !!it && it.category !== 'character' && it.category !== 'actor';
@@ -469,6 +543,10 @@ ${tpLines.join('\n')}
           if (type === 'scene') text = tidyHeading(raw);
           if (type === 'page') text = raw.replace(/^\(\s*\d+\s+panels?\s*\)$/i, '');
           const e = el(type, text);
+          if (type !== 'scene' && type !== 'page' && p.querySelector('b, i, u, strong, em, [style]')) {
+            const tf = textAndFmt(p);
+            if (tf.fmt.length && tf.text === text) e.fmt = tf.fmt;
+          }
           if (type === sceneType) {
             curScene = e;
             let data = null;

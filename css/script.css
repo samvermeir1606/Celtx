@@ -54,6 +54,20 @@
 .script-text[data-script-type="comic"] .el[data-type="sfx"] { margin-left: 1in; }
 .script-text[data-script-type="comic"] .el[data-type="sfx"]::before { content: "SFX: "; font-weight: 700; }
 
+/* ---------- TV: act breaks ---------- */
+.script-text .el[data-type="act"] { text-align: center; text-transform: uppercase; text-decoration: underline; font-weight: 700; margin-top: calc(3in / 6); }
+.script-text .el:first-child[data-type="act"] { margin-top: 0; }
+/* multi-camera sitcom: lettered scenes, caps action, double-spaced dialogue */
+.script-text[data-script-type="sitcom"] { counter-reset: sitcom-scene; }
+.script-text[data-script-type="sitcom"] .el[data-type="act"] { counter-reset: sitcom-scene; }
+.script-text[data-script-type="sitcom"] .el[data-type="scene"] { counter-increment: sitcom-scene; text-decoration: underline; }
+.script-text[data-script-type="sitcom"] .el[data-type="scene"]::before { content: counter(sitcom-scene, upper-alpha); position: absolute; left: -0.6in; font-weight: 700; color: var(--paper-muted); text-decoration: none; }
+.script-text[data-script-type="sitcom"] .el[data-type="action"] { text-transform: uppercase; }
+.script-text[data-script-type="sitcom"] .el[data-type="dialogue"] { line-height: calc(2in / 6); margin-left: 1.5in; max-width: 3.5in; }
+.script-text[data-script-type="sitcom"] .el[data-type="character"] { margin-left: 2.5in; }
+.script-text[data-script-type="sitcom"] .el[data-type="parenthetical"] { margin-left: 2in; }
+.tp-episode { margin-top: calc(2in / 6); }
+
 /* ---------- AV script: video left, audio right ---------- */
 .script-text[data-script-type="av"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 0.35in; align-items: start; }
 .script-text[data-script-type="av"] .el { grid-column: 1 / -1; margin-left: 0; max-width: none; }
@@ -66,6 +80,15 @@
 .script-text[data-script-type="av"] .el[data-type="parenthetical"] { margin-left: 0.3in; }
 .script-text[data-script-type="av"] .el[data-type="dialogue"] { margin-top: 0; }
 .script-text[data-script-type="av"] .el[data-type="scene"] { border-bottom: 1px solid currentColor; padding-bottom: 2px; }
+
+/* ---------- dual dialogue ---------- */
+.editor .el[data-dual] { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 55%, transparent); padding-left: 0.08in; }
+.editor .el[data-dual][data-type="character"]::before { content: "⇉ at the same time"; position: absolute; left: -1.45in; top: 0.02in; font: 600 9px/1 system-ui, sans-serif; letter-spacing: 0.02em; text-transform: none; color: var(--accent); white-space: nowrap; }
+.script-text .dual-pair { display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.25in; margin-top: calc(1in / 6); }
+.script-text .dual-col .el:first-child { margin-top: 0; }
+.script-text .dual-col .el[data-type="character"] { margin-left: 0.9in; }
+.script-text .dual-col .el[data-type="parenthetical"] { margin-left: 0.5in; max-width: none; }
+.script-text .dual-col .el[data-type="dialogue"] { margin-left: 0; max-width: none; }
 
 /* ---------- editor-only hints ---------- */
 .editor .el.current { background: color-mix(in srgb, var(--accent) 5%, transparent); box-shadow: -0.12in 0 0 -0.08in var(--accent); }
@@ -107,6 +130,10 @@
   .print-script .title-page { page: titlepage; break-after: page; height: 9in; color: #000; }
   .print-script .script-text { color: #000; --paper-muted: #555; }
   .print-script .el.is-empty { visibility: hidden; }
+  .print-script .el.act-start:not(:first-child) { break-before: page; }
+  .print-script .script-text[data-script-type="sitcom"] .el[data-type="scene"]:not(:first-child) { break-before: page; }
+  .print-script .script-text[data-script-type="sitcom"] .el[data-type="act"] + .el[data-type="scene"] { break-before: auto; }
+  .print-script .el[data-type="act"] { break-after: avoid; }
   .print-script .el[data-type="scene"],
   .print-script .el[data-type="character"],
   .print-script .el[data-type="parenthetical"],

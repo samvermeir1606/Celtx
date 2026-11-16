@@ -1,0 +1,27 @@
+[
+ {
+  "file": "examples/the-last-ferry.scriptdesk",
+  "title": "The Last Ferry",
+  "kind": "Short film with storyboard, sketch, schedule and budget"
+ },
+ {
+  "file": "examples/night-shift-pilot.scriptdesk",
+  "title": "Night Shift",
+  "kind": "TV drama pilot"
+ },
+ {
+  "file": "examples/the-flatmates.scriptdesk",
+  "title": "The Flatmates",
+  "kind": "Multi-camera sitcom"
+ },
+ {
+  "file": "examples/the-lantern.scriptdesk",
+  "title": "The Lantern",
+  "kind": "Audio play"
+ },
+ {
+  "file": "examples/the-cartographer.fountain",
+  "title": "The Cartographer",
+  "kind": "Fountain file"
+ }
+]

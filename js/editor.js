@@ -63,7 +63,7 @@
       for (const e of this.doc.elements) frag.appendChild(this.makeBlock(e));
       this.root.replaceChildren(frag);
       this.ensureNotEmpty();
-      if (this.opts.onRender) this.opts.onRender();
+      this.refreshMarks();
     }
 
     makeBlock(e) {
@@ -73,18 +73,79 @@
       d.dataset.id = e.id;
       const open = e.comments ? e.comments.filter((c) => !c.done).length : 0;
       if (open) d.dataset.comments = open;
-      this.setBlockText(d, e.text);
+      this.setBlockText(d, e.text, e.fmt);
       return d;
+    }
+
+    // Formatting runs of a block, read from its <b>/<i>/<u> (and any pasted styles).
+    blockFmt(block) {
+      const runs = [];
+      let pos = 0;
+      const walk = (node, flags) => {
+        for (const c of node.childNodes) {
+          if (c.nodeType === 3) { const t = c.data.replace(/\u200b/g, ''); if (t.length && flags) runs.push([pos, pos + t.length, flags]); pos += t.length; continue; }
+          if (c.nodeType !== 1) continue;
+          let f = flags;
+          const tag = c.tagName;
+          if (tag === 'B' || tag === 'STRONG') f |= 1;
+          if (tag === 'I' || tag === 'EM') f |= 2;
+          if (tag === 'U') f |= 4;
+          const st = c.style;
+          if (st) {
+            const w = st.fontWeight;
+            if (w === 'bold' || +w >= 600) f |= 1; else if (w === 'normal' || (w && +w < 600)) f &= ~1;
+            if (st.fontStyle === 'italic') f |= 2; else if (st.fontStyle === 'normal') f &= ~2;
+            const td = st.textDecorationLine || st.textDecoration || '';
+            if (/underline/.test(td)) f |= 4; else if (td === 'none') f &= ~4;
+          }
+          walk(c, f);
+        }
+      };
+      walk(block, 0);
+      return SD.fmtClean(runs);
+    }
+
+    // Only <b>, <i>, <u> without attributes (or a lone <br>) count as tidy.
+    isTidy(block) {
+      for (const el of block.querySelectorAll('*')) {
+        if (el.tagName === 'BR') continue;
+        if (!['B', 'I', 'U'].includes(el.tagName) || el.attributes.length) return false;
+      }
+      return true;
+    }
+
+    format(kind) {
+      if (!this.doc) return;
+      const cmd = { b: 'bold', i: 'italic', u: 'underline' }[kind];
+      const sel = getSelection();
+      if (!sel.rangeCount || sel.isCollapsed || !this.root.contains(sel.anchorNode)) return;
+      this.checkpoint();
+      const r = sel.getRangeAt(0);
+      const a = this.blockOf(r.startContainer), z = this.blockOf(r.endContainer);
+      const keep = a && z ? { a: this.blocks().indexOf(a), as: this.offsetIn(a, r.startContainer, r.startOffset), z: this.blocks().indexOf(z), zs: this.offsetIn(z, r.endContainer, r.endOffset) } : null;
+      try { document.execCommand('styleWithCSS', false, false); } catch (e) { /* older browsers */ }
+      document.execCommand(cmd, false, null);
+      this.afterChange();
+      if (keep) {
+        const bs = this.blocks();
+        const ra = bs[keep.a] && this.rangeIn(bs[keep.a], keep.as, keep.as), rz = bs[keep.z] && this.rangeIn(bs[keep.z], keep.zs, keep.zs);
+        if (ra && rz) { const rr = document.createRange(); rr.setStart(ra.startContainer, ra.startOffset); rr.setEnd(rz.startContainer, rz.startOffset); sel.removeAllRanges(); sel.addRange(rr); }
+      }
     }
 
     // Lines with open comments carry data-comments (drawn as a marker by the CSS).
     refreshMarks() {
       if (!this.doc) return;
       const byId = new Map(this.doc.elements.map((e) => [e.id, e]));
+      let dual = false;
       for (const b of this.blocks()) {
         const e = byId.get(b.dataset.id);
         const n = e && e.comments ? e.comments.filter((c) => !c.done).length : 0;
         if (n) b.dataset.comments = n; else delete b.dataset.comments;
+        const t = b.dataset.type;
+        if (t === 'character') dual = !!(e && e.dual);
+        else if (!SD.SPEECH_TYPES.has(t)) dual = false;
+        if (dual) b.dataset.dual = '1'; else delete b.dataset.dual;
       }
       if (this.opts.onRender) this.opts.onRender();
     }
@@ -129,8 +190,9 @@
       return true;
     }
 
-    setBlockText(d, text) {
-      d.textContent = text || '';
+    setBlockText(d, text, fmt) {
+      if (fmt && fmt.length && text) SD.fillFormatted(d, text, fmt);
+      else d.textContent = text || '';
       if (!text) d.appendChild(document.createElement('br'));
       d.classList.toggle('is-empty', !text);
     }
@@ -165,9 +227,12 @@
         seen.add(id);
         const type = b.dataset.type || 'action';
         const text = this.blockText(b).replace(/\n/g, ' ');
+        const fmt = b.querySelector('b, i, u, strong, em, span, font') ? this.blockFmt(b) : [];
         const prev = old.get(id);
-        if (prev) { prev.type = type; prev.text = text; out.push(prev); }
-        else out.push({ id, type, text });
+        const e = prev || { id };
+        e.type = type; e.text = text;
+        if (fmt.length) e.fmt = fmt; else delete e.fmt;
+        out.push(e);
       }
       this.doc.elements = out;
     }
@@ -189,10 +254,9 @@
         if (hadCaret) strayCaret = d;
       }
       for (const b of this.blocks()) {
-        let bad = false;
-        for (const c of b.childNodes) if (c.nodeType === 1 && c.tagName !== 'BR') { bad = true; break; }
+        const bad = !this.isTidy(b);
         const t = this.blockText(b);
-        if (bad) { this.setBlockText(b, t); changed = true; }
+        if (bad) { this.setBlockText(b, t, this.blockFmt(b)); changed = true; }
         else if (t && b.querySelector('br')) { b.querySelectorAll('br').forEach((x) => x.remove()); changed = true; }
         else if (!t && !b.querySelector('br')) { b.appendChild(document.createElement('br')); }
         b.classList.toggle('is-empty', !t);
@@ -358,10 +422,10 @@
       b.dataset.type = nt;
       if (nt === 'parenthetical' && old !== 'parenthetical') {
         if (!text.trim()) { this.setBlockText(b, '()'); if (caretHere) this.setCaret(b, 1); }
-        else if (!text.startsWith('(')) { const t = '(' + text.trim() + ')'; this.setBlockText(b, t); if (caretHere) this.setCaret(b, t.length - 1); }
+        else if (!text.startsWith('(')) { const lead = text.length - text.trimStart().length; const t = '(' + text.trim() + ')'; this.setBlockText(b, t, SD.fmtShift(SD.fmtSlice(this.blockFmt(b), lead, lead + text.trim().length), 1)); if (caretHere) this.setCaret(b, t.length - 1); }
       } else if (old === 'parenthetical' && nt !== 'parenthetical') {
         const m = text.match(/^\((.*)\)$/);
-        if (m) { this.setBlockText(b, m[1]); if (caretHere) this.setCaret(b, m[1].length); }
+        if (m) { this.setBlockText(b, m[1], SD.fmtSlice(this.blockFmt(b), 1, 1 + m[1].length)); if (caretHere) this.setCaret(b, m[1].length); }
       }
     }
 
@@ -397,7 +461,7 @@
           if (t) { e.preventDefault(); this.setType(t); }
           return;
         }
-        if (k === 'b' || k === 'i' || k === 'u') { e.preventDefault(); return; }
+        if (k === 'b' || k === 'i' || k === 'u') { e.preventDefault(); this.format(k); return; }
       }
       if (e.key === 'Enter' && !mod) { e.preventDefault(); this.handleEnter(e.shiftKey); return; }
       if (e.key === 'Tab' && !mod) { e.preventDefault(); this.handleTab(e.shiftKey); return; }
@@ -410,7 +474,7 @@
         case 'insertParagraph': e.preventDefault(); this.handleEnter(false); return;
         case 'insertLineBreak': e.preventDefault(); this.handleEnter(true); return;
         case 'insertFromDrop': e.preventDefault(); return;
-        case 'formatBold': case 'formatItalic': case 'formatUnderline': e.preventDefault(); return;
+        case 'formatBold': case 'formatItalic': case 'formatUnderline': e.preventDefault(); this.format({ formatBold: 'b', formatItalic: 'i', formatUnderline: 'u' }[e.inputType]); return;
         case 'insertText': {
           // typing ")" right before an existing ")" just steps over it
           if (e.data === ')') {
@@ -467,9 +531,10 @@
       }
       const before = text.slice(0, off);
       const after = text.slice(off);
+      const fmt = this.blockFmt(b);
       const newType = keepType || after.length ? type : this.type.enter[type] || 'action';
-      this.setBlockText(b, before);
-      const nb = this.makeBlock({ id: SD.uid(), type: newType, text: after });
+      this.setBlockText(b, before, SD.fmtSlice(fmt, 0, off));
+      const nb = this.makeBlock({ id: SD.uid(), type: newType, text: after, fmt: SD.fmtSlice(fmt, off, text.length) });
       b.after(nb);
       this.setCaret(nb, 0);
       this.afterChange();
@@ -536,7 +601,8 @@
         const t = this.blockText(b);
         const s = i === i0 ? this.offsetIn(b, r.startContainer, r.startOffset) : 0;
         const en = i === i1 ? this.offsetIn(b, r.endContainer, r.endOffset) : t.length;
-        items.push({ type: b.dataset.type, text: t.slice(s, en) });
+        const f = SD.fmtSlice(this.blockFmt(b), s, en);
+        items.push(f.length ? { type: b.dataset.type, text: t.slice(s, en), fmt: f } : { type: b.dataset.type, text: t.slice(s, en) });
       }
       e.preventDefault();
       e.clipboardData.setData('text/plain', items.map((x) => x.text).join('\n'));
@@ -546,7 +612,8 @@
         const startOff = this.offsetIn(sb, r.startContainer, r.startOffset);
         r.deleteContents();
         if (sb !== eb && eb.isConnected) {
-          this.setBlockText(sb, this.blockText(sb) + this.blockText(eb));
+          const ta = this.blockText(sb);
+          this.setBlockText(sb, ta + this.blockText(eb), [...this.blockFmt(sb), ...SD.fmtShift(this.blockFmt(eb), ta.length)]);
           eb.remove();
         }
         this.normalize();
@@ -564,7 +631,7 @@
       if (!items && !text) return;
       if (!items && !text.includes('\n')) { document.execCommand('insertText', false, text); return; }
       if (!items) items = SD.Fountain.parse(text).elements.map((x) => ({ type: x.type, text: x.text }));
-      items = items.map((x) => ({ type: this.type.elements.includes(x.type) ? x.type : 'action', text: x.text || '' }));
+      items = items.map((x) => ({ type: this.type.elements.includes(x.type) ? x.type : 'action', text: x.text || '', fmt: Array.isArray(x.fmt) ? x.fmt : undefined }));
       if (!items.length) return;
 
       this.checkpoint();
@@ -574,7 +641,7 @@
         const a = this.blockOf(r.startContainer), z = this.blockOf(r.endContainer);
         const off = a ? this.offsetIn(a, r.startContainer, r.startOffset) : 0;
         r.deleteContents();
-        if (a && z && a !== z && z.isConnected) { this.setBlockText(a, this.blockText(a) + this.blockText(z)); z.remove(); }
+        if (a && z && a !== z && z.isConnected) { const ta = this.blockText(a); this.setBlockText(a, ta + this.blockText(z), [...this.blockFmt(a), ...SD.fmtShift(this.blockFmt(z), ta.length)]); z.remove(); }
         this.normalize();
         if (a) this.setCaret(a, off);
       }
@@ -582,22 +649,24 @@
       if (!b) return;
       const t = this.blockText(b), off = this.caretOffset(b);
       const before = t.slice(0, off), after = t.slice(off);
+      const bf = this.blockFmt(b);
       // single fragment from within one element: paste inline
       if (items.length === 1) {
-        this.setBlockText(b, before + items[0].text + after);
+        const n = items[0].text.length;
+        this.setBlockText(b, before + items[0].text + after, [...SD.fmtSlice(bf, 0, off), ...SD.fmtShift(items[0].fmt || [], off), ...SD.fmtShift(SD.fmtSlice(bf, off, t.length), off + n)]);
         this.setCaret(b, before.length + items[0].text.length);
         this.afterChange();
         return;
       }
-      const nbs = items.map((x) => this.makeBlock({ id: SD.uid(), type: x.type, text: x.text }));
+      const nbs = items.map((x) => this.makeBlock({ id: SD.uid(), type: x.type, text: x.text, fmt: x.fmt }));
       const last = nbs[nbs.length - 1];
       if (before) {
-        this.setBlockText(b, before);
+        this.setBlockText(b, before, SD.fmtSlice(bf, 0, off));
         b.after(...nbs);
-        if (after) last.after(this.makeBlock({ id: SD.uid(), type: b.dataset.type, text: after }));
+        if (after) last.after(this.makeBlock({ id: SD.uid(), type: b.dataset.type, text: after, fmt: SD.fmtSlice(bf, off, t.length) }));
       } else {
         b.before(...nbs);
-        if (after) this.setBlockText(b, after);
+        if (after) this.setBlockText(b, after, SD.fmtSlice(bf, off, t.length));
         else b.remove();
       }
       this.setCaret(last, this.blockText(last).length);
