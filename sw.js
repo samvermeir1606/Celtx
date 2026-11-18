@@ -1,6 +1,6 @@
 /* Scriptdesk — offline support. Keeps a copy of the app so it opens without an internet connection.
    When you change any file, raise VERSION here and the ?v= numbers in index.html. */
-const VERSION = '9';
+const VERSION = '13';
 const CACHE = 'scriptdesk-v' + VERSION;
 const RUNTIME = 'scriptdesk-runtime';
 const ASSETS = [
@@ -14,7 +14,7 @@ const ASSETS = [
   'css/app.css?v=' + VERSION,
   'css/script.css?v=' + VERSION,
   'css/script.css',
-  ...['formats', 'catalog', 'storyline', 'storyboard', 'beatboard', 'sketch', 'schedule', 'budget', 'timeline', 'relations', 'moodboard', 'locmap', 'review', 'formats-io', 'editor', 'touch', 'app'].map((n) => `js/${n}.js?v=${VERSION}`),
+  ...['formats', 'paginate', 'pdf', 'catalog', 'storyline', 'storyboard', 'beatboard', 'sketch', 'schedule', 'budget', 'timeline', 'relations', 'moodboard', 'locmap', 'review', 'markdown', 'formats-io', 'editor', 'touch', 'discover', 'app'].map((n) => `js/${n}.js?v=${VERSION}`),
   'examples/index.json',
 ];
 
@@ -57,7 +57,7 @@ self.addEventListener('fetch', (e) => {
   }
   // fonts and the zip library (for .celtx files): use the saved copy, refresh it in the background
   // (map tiles are not kept: there are too many of them)
-  if (/fonts\.(googleapis|gstatic)\.com$|cdnjs\.cloudflare\.com$/.test(url.hostname)) {
+  if (/fonts\.(googleapis|gstatic)\.com$|cdnjs\.cloudflare\.com$|cdn\.jsdelivr\.net$/.test(url.hostname)) {
     e.respondWith(caches.open(RUNTIME).then(async (c) => {
       const hit = await c.match(req);
       const net = fetch(req).then((res) => { if (res.ok || res.type === 'opaque') c.put(req, res.clone()); return res; }).catch(() => hit);

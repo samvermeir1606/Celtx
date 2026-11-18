@@ -218,7 +218,7 @@
   SD.textToHtml = (text) => String(text || '').split(/\n{2,}/).filter((p) => p.trim()).map((p) => '<p>' + esc(p).replace(/\n/g, '<br>') + '</p>').join('');
 
   // Keep only simple formatting: headings, paragraphs, bold/italic/underline, lists, quotes, links.
-  const ALLOWED = new Set(['P', 'H1', 'H2', 'H3', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'BR', 'HR', 'A', 'DIV', 'SPAN']);
+  const ALLOWED = new Set(['P', 'H1', 'H2', 'H3', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'BR', 'HR', 'A', 'DIV', 'SPAN', 'PRE', 'CODE', 'DEL']);
   SD.sanitizeHtml = (html) => {
     const doc = new DOMParser().parseFromString('<body>' + (html || '') + '</body>', 'text/html');
     const walk = (node) => {
@@ -440,6 +440,8 @@
       s.lines = Math.max(1, endLine - est.lineAt[s.start]);
       s.page = SD.pageOfLine(est.lineAt[s.start]);
     });
+    // exact page numbers from the page engine
+    if (SD.paginate) { const pg = SD.paginate(doc); scenes.forEach((s) => { const v = pg.pageOf.get(s.id); if (v) s.page = v; }); scenes.pages = pg.count; }
     scenes.estimate = est;
     return scenes;
   };

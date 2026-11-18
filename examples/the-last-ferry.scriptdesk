@@ -2,8 +2,8 @@
  "app": "scriptdesk",
  "version": 1,
  "title": "The Last Ferry",
- "created": "2026-11-16T13:53:04.720Z",
- "modified": "2026-11-16T13:53:04.720Z",
+ "created": "2026-11-18T14:45:50.026Z",
+ "modified": "2026-11-18T14:45:50.026Z",
  "settings": {
   "pageSize": "letter",
   "sceneNumbers": true,
@@ -30,7 +30,7 @@
     "author": "A Scriptdesk example",
     "source": "",
     "draftDate": "Example draft",
-    "contact": ""
+    "contact": "writer@example.com\n+00 000 00 00 00"
    },
    "elements": [
     {
@@ -43,9 +43,18 @@
      "timing": {
       "manual": 58
      },
+     "purpose": {
+      "pov": "ELSA",
+      "want": "one last ordinary crossing",
+      "obstacle": "the bridge, almost finished",
+      "turn": "she talks to the boat like a person",
+      "from": "routine",
+      "to": "goodbye",
+      "polarity": "-"
+     },
      "items": [
-      "ex0002f",
-      "ex0002l"
+      "ex0002h",
+      "ex0002n"
      ]
     },
     {
@@ -91,9 +100,18 @@
      "text": "INT. FERRY WHEELHOUSE - DAWN",
      "synopsis": "Her son Tomas, the bridge engineer, calls on the radio. She refuses to come to the opening.",
      "temp": 3,
+     "purpose": {
+      "pov": "ELSA",
+      "want": "to be left alone",
+      "obstacle": "Tomas on the radio",
+      "turn": "she refuses the front-row seat",
+      "from": "distant",
+      "to": "more distant",
+      "polarity": "-"
+     },
      "items": [
-      "ex0002j",
-      "ex0002l"
+      "ex0002l",
+      "ex0002n"
      ]
     },
     {
@@ -179,9 +197,18 @@
      "text": "INT. FERRY CAR DECK - DAY",
      "synopsis": "Elsa finds Noor, a runaway teenager, hiding in a delivery van.",
      "temp": 6,
+     "purpose": {
+      "pov": "ELSA",
+      "want": "a clean deck",
+      "obstacle": "a stowaway in the van",
+      "turn": "she finds Noor",
+      "from": "alone",
+      "to": "responsible for someone",
+      "polarity": "±"
+     },
      "items": [
-      "ex0002m",
-      "ex0002k"
+      "ex0002o",
+      "ex0002m"
      ]
     },
     {
@@ -245,13 +272,22 @@
      "synopsis": "On the open deck they trade stories. Noor is running away; Elsa remembers her first crossing.",
      "color": "",
      "temp": 4,
+     "purpose": {
+      "pov": "NOOR",
+      "want": "to not be asked questions",
+      "obstacle": "Elsa asks anyway",
+      "turn": "Elsa tells her about her father",
+      "from": "strangers",
+      "to": "listening",
+      "polarity": "+"
+     },
      "timing": {
       "read": 96
      },
      "items": [
-      "ex0002i",
-      "ex0002l",
-      "ex0002k"
+      "ex0002k",
+      "ex0002n",
+      "ex0002m"
      ]
     },
     {
@@ -337,9 +373,18 @@
      "text": "INT. FERRY WHEELHOUSE - DAY",
      "synopsis": "The engine falters in the fog. Elsa puts Noor at the wheel while she fixes it.",
      "temp": 9,
+     "purpose": {
+      "pov": "NOOR",
+      "want": "to get off the boat",
+      "obstacle": "fog and a dead engine",
+      "turn": "Elsa puts her at the wheel",
+      "from": "scared",
+      "to": "proud",
+      "polarity": "+"
+     },
      "items": [
-      "ex0002q",
-      "ex0002l"
+      "ex0002s",
+      "ex0002n"
      ]
     },
     {
@@ -410,9 +455,18 @@
      "text": "EXT. ISLAND PIER - DAY",
      "synopsis": "Tomas is waiting at the pier. Noor calls her mother.",
      "temp": 5,
+     "purpose": {
+      "pov": "ELSA",
+      "want": "to avoid thanks",
+      "obstacle": "Tomas is waiting at the pier",
+      "turn": "Noor calls her mother",
+      "from": "hiding",
+      "to": "seen",
+      "polarity": "±"
+     },
      "items": [
-      "ex0002h",
-      "ex0002k"
+      "ex0002j",
+      "ex0002m"
      ]
     },
     {
@@ -473,38 +527,47 @@
      "synopsis": "The last crossing home: Elsa, Tomas and the ferry pass under the new bridge.",
      "color": "",
      "temp": 7,
+     "purpose": {
+      "pov": "ELSA",
+      "want": "to finish the crossing",
+      "obstacle": "it is the very last one",
+      "turn": "she lets Tomas stand beside her",
+      "from": "apart",
+      "to": "together",
+      "polarity": "+"
+     },
      "items": [
-      "ex0002l"
+      "ex0002n"
      ],
      "versionName": "Under the bridge",
      "versions": [
       {
-       "id": "ex00056",
+       "id": "ex0005a",
        "name": "At the ceremony",
        "created": "2026-01-12T09:00:00.000Z",
        "elements": [
         {
-         "id": "ex00057",
+         "id": "ex0005b",
          "type": "action",
          "text": "Elsa ties up the Margit for the last time. Up on the bridge, a brass band starts to play."
         },
         {
-         "id": "ex00058",
+         "id": "ex0005c",
          "type": "action",
          "text": "She climbs the stairs to the ceremony in her captain’s coat. Tomas sees her and stops mid-speech."
         },
         {
-         "id": "ex00059",
+         "id": "ex0005d",
          "type": "character",
          "text": "TOMAS"
         },
         {
-         "id": "ex0005a",
+         "id": "ex0005e",
          "type": "dialogue",
          "text": "The front row is still free."
         },
         {
-         "id": "ex0005b",
+         "id": "ex0005f",
          "type": "transition",
          "text": "FADE OUT."
         }
@@ -562,25 +625,25 @@
    ]
   },
   {
-   "id": "ex0002t",
+   "id": "ex0002x",
    "kind": "storyline",
    "name": "Who meets whom",
    "sourceId": "ex00001",
    "rows": [
     {
-     "id": "ex0002v",
+     "id": "ex0002z",
      "name": "ELSA",
      "charId": "ex00029",
      "color": "#e5484d"
     },
     {
-     "id": "ex0002y",
+     "id": "ex00032",
      "name": "TOMAS",
      "charId": "ex0002b",
      "color": "#0090ff"
     },
     {
-     "id": "ex00031",
+     "id": "ex00035",
      "name": "NOOR",
      "charId": "ex0002a",
      "color": "#46a758"
@@ -588,15 +651,15 @@
    ],
    "beats": [
     {
-     "id": "ex0002u",
+     "id": "ex0002y",
      "sceneId": "ex00003",
      "label": "EXT. HARBOUR - DAWN",
      "groups": [
       {
-       "id": "ex0002w",
+       "id": "ex00030",
        "label": "HARBOUR",
        "members": [
-        "ex0002v"
+        "ex0002z"
        ],
        "fromScript": true
       }
@@ -605,16 +668,16 @@
      "number": 1
     },
     {
-     "id": "ex0002x",
+     "id": "ex00031",
      "sceneId": "ex0000a",
      "label": "INT. FERRY WHEELHOUSE - DAWN",
      "groups": [
       {
-       "id": "ex0002z",
+       "id": "ex00033",
        "label": "FERRY WHEELHOUSE",
        "members": [
-        "ex0002y",
-        "ex0002v"
+        "ex00032",
+        "ex0002z"
        ],
        "fromScript": true
       }
@@ -623,44 +686,44 @@
      "number": 2
     },
     {
-     "id": "ex00030",
+     "id": "ex00034",
      "sceneId": "ex0000p",
      "label": "INT. FERRY CAR DECK - DAY",
      "groups": [
       {
-       "id": "ex00032",
+       "id": "ex00036",
        "label": "FERRY CAR DECK",
        "members": [
-        "ex00031",
-        "ex0002v"
+        "ex00035",
+        "ex0002z"
        ],
        "fromScript": true
       }
      ],
      "events": [
       {
-       "id": "ex0003b",
+       "id": "ex0003f",
        "kind": "meet",
        "label": "Elsa finds Noor",
        "rows": [
-        "ex0002v",
-        "ex00031"
+        "ex0002z",
+        "ex00035"
        ]
       }
      ],
      "number": 3
     },
     {
-     "id": "ex00033",
+     "id": "ex00037",
      "sceneId": "ex0000y",
      "label": "EXT. FERRY DECK - DAY",
      "groups": [
       {
-       "id": "ex00034",
+       "id": "ex00038",
        "label": "FERRY DECK",
        "members": [
-        "ex00031",
-        "ex0002v"
+        "ex00035",
+        "ex0002z"
        ],
        "fromScript": true
       }
@@ -669,43 +732,43 @@
      "number": 4
     },
     {
-     "id": "ex00035",
+     "id": "ex00039",
      "sceneId": "ex0001c",
      "label": "INT. FERRY WHEELHOUSE - DAY",
      "groups": [
       {
-       "id": "ex00036",
+       "id": "ex0003a",
        "label": "FERRY WHEELHOUSE",
        "members": [
-        "ex0002v",
-        "ex00031"
+        "ex0002z",
+        "ex00035"
        ],
        "fromScript": true
       }
      ],
      "events": [
       {
-       "id": "ex0003c",
+       "id": "ex0003g",
        "kind": "turn",
        "label": "Noor steers",
        "rows": [
-        "ex00031"
+        "ex00035"
        ]
       }
      ],
      "number": 5
     },
     {
-     "id": "ex00037",
+     "id": "ex0003b",
      "sceneId": "ex0001n",
      "label": "EXT. ISLAND PIER - DAY",
      "groups": [
       {
-       "id": "ex00038",
+       "id": "ex0003c",
        "label": "ISLAND PIER",
        "members": [
-        "ex0002y",
-        "ex0002v"
+        "ex00032",
+        "ex0002z"
        ],
        "fromScript": true
       }
@@ -714,28 +777,28 @@
      "number": 6
     },
     {
-     "id": "ex00039",
+     "id": "ex0003d",
      "sceneId": "ex0001y",
      "label": "EXT. FERRY DECK - DUSK",
      "groups": [
       {
-       "id": "ex0003a",
+       "id": "ex0003e",
        "label": "FERRY DECK",
        "members": [
-        "ex0002y",
-        "ex0002v"
+        "ex00032",
+        "ex0002z"
        ],
        "fromScript": true
       }
      ],
      "events": [
       {
-       "id": "ex0003d",
+       "id": "ex0003h",
        "kind": "love",
        "label": "Mother and son, together",
        "rows": [
-        "ex0002v",
-        "ex0002y"
+        "ex0002z",
+        "ex00032"
        ]
       }
      ],
@@ -748,14 +811,14 @@
    }
   },
   {
-   "id": "ex0005c",
+   "id": "ex0005g",
    "kind": "timeline",
    "name": "Timeline",
    "sourceId": "ex00001",
    "order": [
-    "ex0005d",
-    "ex0005e",
-    "ex0005f",
+    "ex0005h",
+    "ex0005i",
+    "ex0005j",
     "ex00003",
     "ex0000a",
     "ex0000p",
@@ -766,22 +829,22 @@
    ],
    "events": [
     {
-     "id": "ex0005d",
+     "id": "ex0005h",
      "text": "Elsa’s father lets her steer the ferry for the first time"
     },
     {
-     "id": "ex0005e",
+     "id": "ex0005i",
      "text": "Elsa’s husband Jens, the ferry’s engineer, dies"
     },
     {
-     "id": "ex0005f",
+     "id": "ex0005j",
      "text": "Building of the bridge begins — Tomas is the engineer"
     }
    ],
    "when": {
-    "ex0005d": "1962",
-    "ex0005e": "6 years ago",
-    "ex0005f": "3 years ago",
+    "ex0005h": "1962",
+    "ex0005i": "6 years ago",
+    "ex0005j": "3 years ago",
     "ex00003": "The last day, dawn",
     "ex0000y": "Mid-morning",
     "ex0001n": "Noon",
@@ -789,7 +852,7 @@
    }
   },
   {
-   "id": "ex0005g",
+   "id": "ex0005k",
    "kind": "relations",
    "name": "Relationships",
    "sourceId": "ex00001",
@@ -809,14 +872,17 @@
    },
    "links": [
     {
-     "id": "ex0005h",
+     "id": "ex0005l",
      "a": "ex00029",
      "b": "ex0002b",
      "kind": "family",
      "label": "mother & son, not talking",
+     "wantsAB": "To be left to finish her work alone",
+     "wantsBA": "Her blessing for the bridge",
+     "unsaid": "His father would have loved the bridge.",
      "changes": [
       {
-       "id": "ex0005i",
+       "id": "ex0005m",
        "sceneId": "ex0001y",
        "kind": "love",
        "label": "side by side again"
@@ -824,15 +890,17 @@
      ]
     },
     {
-     "id": "ex0005j",
+     "id": "ex0005n",
      "a": "ex00029",
      "b": "ex0002a",
      "kind": "rivals",
      "label": "stowaway",
+     "wantsAB": "Her off the boat at the next pier",
+     "wantsBA": "No questions",
      "from": "ex0000p",
      "changes": [
       {
-       "id": "ex0005k",
+       "id": "ex0005o",
        "sceneId": "ex0001c",
        "kind": "friends",
        "label": "she lets Noor steer"
@@ -840,7 +908,7 @@
      ]
     },
     {
-     "id": "ex0005l",
+     "id": "ex0005p",
      "a": "ex0002b",
      "b": "ex00029",
      "kind": "secret",
@@ -853,19 +921,19 @@
    "at": -1
   },
   {
-   "id": "ex0003w",
+   "id": "ex00040",
    "kind": "storyboard",
    "name": "Storyboard",
    "sourceId": "ex00001",
    "ratio": "16:9",
    "sequences": [
     {
-     "id": "ex0003x",
+     "id": "ex00041",
      "sceneId": "ex00003",
      "title": "EXT. HARBOUR - DAWN",
      "shots": [
       {
-       "id": "ex00044",
+       "id": "ex00048",
        "caption": "Fog on the water. The bridge, almost closed, far away.",
        "shotType": "EWS",
        "move": "Static",
@@ -878,7 +946,7 @@
        "diagram": ""
       },
       {
-       "id": "ex00045",
+       "id": "ex00049",
        "caption": "Elsa coils the mooring line.",
        "shotType": "MS",
        "move": "Handheld",
@@ -891,7 +959,7 @@
        "diagram": ""
       },
       {
-       "id": "ex00046",
+       "id": "ex0004a",
        "caption": "Her hand on the hull.",
        "shotType": "ECU",
        "move": "Static",
@@ -907,19 +975,19 @@
      "number": 1
     },
     {
-     "id": "ex0003y",
+     "id": "ex00042",
      "sceneId": "ex0000a",
      "title": "INT. FERRY WHEELHOUSE - DAWN",
      "shots": [],
      "number": 2
     },
     {
-     "id": "ex0003z",
+     "id": "ex00043",
      "sceneId": "ex0000p",
      "title": "INT. FERRY CAR DECK - DAY",
      "shots": [
       {
-       "id": "ex00047",
+       "id": "ex0004b",
        "caption": "Elsa walks the deck between the vehicles, checking straps.",
        "shotType": "WS",
        "move": "Tracking",
@@ -931,12 +999,12 @@
        "drawing": "",
        "diagram": "",
        "setupRef": {
-        "sketch": "ex0003e",
-        "setup": "ex0003n"
+        "sketch": "ex0003i",
+        "setup": "ex0003r"
        }
       },
       {
-       "id": "ex00048",
+       "id": "ex0004c",
        "caption": "The van door flies open: Noor stares back.",
        "shotType": "MCU",
        "move": "Static",
@@ -948,36 +1016,36 @@
        "drawing": "",
        "diagram": "",
        "setupRef": {
-        "sketch": "ex0003e",
-        "setup": "ex0003r"
+        "sketch": "ex0003i",
+        "setup": "ex0003v"
        }
       }
      ],
      "number": 3
     },
     {
-     "id": "ex00040",
+     "id": "ex00044",
      "sceneId": "ex0000y",
      "title": "EXT. FERRY DECK - DAY",
      "shots": [],
      "number": 4
     },
     {
-     "id": "ex00041",
+     "id": "ex00045",
      "sceneId": "ex0001c",
      "title": "INT. FERRY WHEELHOUSE - DAY",
      "shots": [],
      "number": 5
     },
     {
-     "id": "ex00042",
+     "id": "ex00046",
      "sceneId": "ex0001n",
      "title": "EXT. ISLAND PIER - DAY",
      "shots": [],
      "number": 6
     },
     {
-     "id": "ex00043",
+     "id": "ex00047",
      "sceneId": "ex0001y",
      "title": "EXT. FERRY DECK - DUSK",
      "shots": [],
@@ -990,12 +1058,12 @@
    }
   },
   {
-   "id": "ex0003e",
+   "id": "ex0003i",
    "kind": "sketch",
    "name": "Car deck — plan",
    "items": [
     {
-     "id": "ex0003f",
+     "id": "ex0003j",
      "type": "wall",
      "x1": 120,
      "y1": 120,
@@ -1004,7 +1072,7 @@
      "color": "#444"
     },
     {
-     "id": "ex0003g",
+     "id": "ex0003k",
      "type": "wall",
      "x1": 120,
      "y1": 680,
@@ -1013,7 +1081,7 @@
      "color": "#444"
     },
     {
-     "id": "ex0003h",
+     "id": "ex0003l",
      "type": "wall",
      "x1": 120,
      "y1": 120,
@@ -1022,7 +1090,7 @@
      "color": "#444"
     },
     {
-     "id": "ex0003i",
+     "id": "ex0003m",
      "type": "rect",
      "x": 900,
      "y": 140,
@@ -1032,7 +1100,7 @@
      "label": "Stairs to deck"
     },
     {
-     "id": "ex0003j",
+     "id": "ex0003n",
      "type": "car",
      "x": 760,
      "y": 420,
@@ -1042,7 +1110,7 @@
      "label": "Delivery van"
     },
     {
-     "id": "ex0003k",
+     "id": "ex0003o",
      "type": "car",
      "x": 420,
      "y": 250,
@@ -1052,7 +1120,7 @@
      "label": "Farm truck"
     },
     {
-     "id": "ex0003l",
+     "id": "ex0003p",
      "type": "car",
      "x": 420,
      "y": 560,
@@ -1062,7 +1130,7 @@
      "label": "Camper"
     },
     {
-     "id": "ex0003m",
+     "id": "ex0003q",
      "type": "text",
      "x": 600,
      "y": 160,
@@ -1071,7 +1139,7 @@
      "color": "#555"
     },
     {
-     "id": "ex0003o",
+     "id": "ex0003s",
      "type": "camera",
      "x": 200,
      "y": 400,
@@ -1079,45 +1147,13 @@
      "scale": 1,
      "color": "#2f2f35",
      "label": "A cam, 24mm",
-     "setup": "ex0003n"
-    },
-    {
-     "id": "ex0003p",
-     "type": "person",
-     "x": 560,
-     "y": 400,
-     "rot": 0,
-     "scale": 1,
-     "color": "#d64541",
-     "label": "ELSA",
-     "setup": "ex0003n"
-    },
-    {
-     "id": "ex0003q",
-     "type": "arrow",
-     "x1": 580,
-     "y1": 400,
-     "x2": 690,
-     "y2": 420,
-     "color": "#d64541",
-     "setup": "ex0003n"
-    },
-    {
-     "id": "ex0003s",
-     "type": "camera",
-     "x": 600,
-     "y": 470,
-     "rot": 0,
-     "scale": 1,
-     "color": "#2f2f35",
-     "label": "A cam, 50mm",
      "setup": "ex0003r"
     },
     {
      "id": "ex0003t",
      "type": "person",
-     "x": 690,
-     "y": 440,
+     "x": 560,
+     "y": 400,
      "rot": 0,
      "scale": 1,
      "color": "#d64541",
@@ -1126,6 +1162,38 @@
     },
     {
      "id": "ex0003u",
+     "type": "arrow",
+     "x1": 580,
+     "y1": 400,
+     "x2": 690,
+     "y2": 420,
+     "color": "#d64541",
+     "setup": "ex0003r"
+    },
+    {
+     "id": "ex0003w",
+     "type": "camera",
+     "x": 600,
+     "y": 470,
+     "rot": 0,
+     "scale": 1,
+     "color": "#2f2f35",
+     "label": "A cam, 50mm",
+     "setup": "ex0003v"
+    },
+    {
+     "id": "ex0003x",
+     "type": "person",
+     "x": 690,
+     "y": 440,
+     "rot": 0,
+     "scale": 1,
+     "color": "#d64541",
+     "label": "ELSA",
+     "setup": "ex0003v"
+    },
+    {
+     "id": "ex0003y",
      "type": "person",
      "x": 820,
      "y": 430,
@@ -1133,10 +1201,10 @@
      "scale": 1,
      "color": "#8e44ad",
      "label": "NOOR (in van)",
-     "setup": "ex0003r"
+     "setup": "ex0003v"
     },
     {
-     "id": "ex0003v",
+     "id": "ex0003z",
      "type": "light",
      "x": 960,
      "y": 560,
@@ -1144,16 +1212,16 @@
      "scale": 1,
      "color": "#e8a33d",
      "label": "Practical",
-     "setup": "ex0003r"
+     "setup": "ex0003v"
     }
    ],
    "setups": [
     {
-     "id": "ex0003n",
+     "id": "ex0003r",
      "name": "Shot 3A — wide"
     },
     {
-     "id": "ex0003r",
+     "id": "ex0003v",
      "name": "Shot 3B — the van door"
     }
    ],
@@ -1165,105 +1233,105 @@
    }
   },
   {
-   "id": "ex00049",
+   "id": "ex0004d",
    "kind": "beatboard",
    "name": "Story circle",
    "sourceId": "ex00001",
    "template": "storyCircle",
    "beats": [
     {
-     "id": "ex0004a",
+     "id": "ex0004e",
      "title": "You",
      "hint": "A character in their comfort zone.",
      "pct": 0,
      "cards": [
       {
-       "id": "ex0004i",
+       "id": "ex0004m",
        "sceneId": "ex00003"
       }
      ]
     },
     {
-     "id": "ex0004b",
+     "id": "ex0004f",
      "title": "Need",
      "hint": "They want something.",
      "pct": 12,
      "cards": [
       {
-       "id": "ex0004j",
+       "id": "ex0004n",
        "sceneId": "ex0000a"
       }
      ]
     },
     {
-     "id": "ex0004c",
+     "id": "ex0004g",
      "title": "Go",
      "hint": "They enter an unfamiliar situation.",
      "pct": 25,
      "cards": [
       {
-       "id": "ex0004k",
+       "id": "ex0004o",
        "sceneId": "ex0000p"
       }
      ]
     },
     {
-     "id": "ex0004d",
+     "id": "ex0004h",
      "title": "Search",
      "hint": "They adapt to it.",
      "pct": 37,
      "cards": [
       {
-       "id": "ex0004l",
+       "id": "ex0004p",
        "sceneId": "ex0000y"
       }
      ]
     },
     {
-     "id": "ex0004e",
+     "id": "ex0004i",
      "title": "Find",
      "hint": "They get what they wanted.",
      "pct": 50,
      "cards": [
       {
-       "id": "ex0004m",
+       "id": "ex0004q",
        "sceneId": "ex0001c"
       }
      ]
     },
     {
-     "id": "ex0004f",
+     "id": "ex0004j",
      "title": "Take",
      "hint": "They pay a heavy price for it.",
      "pct": 62,
      "cards": [
       {
-       "id": "ex0004p",
+       "id": "ex0004t",
        "text": "What does Elsa give up? Maybe she misses the ceremony on purpose — and Tomas sees it.",
        "color": "#ffd9cc"
       }
      ]
     },
     {
-     "id": "ex0004g",
+     "id": "ex0004k",
      "title": "Return",
      "hint": "They go back to where they started.",
      "pct": 75,
      "cards": [
       {
-       "id": "ex0004n",
+       "id": "ex0004r",
        "sceneId": "ex0001n"
       }
      ]
     },
     {
-     "id": "ex0004h",
+     "id": "ex0004l",
      "title": "Change",
      "hint": "They are changed by it.",
      "pct": 90,
      "cards": [
       {
-       "id": "ex0004o",
+       "id": "ex0004s",
        "sceneId": "ex0001y"
       }
      ]
@@ -1271,19 +1339,19 @@
    ]
   },
   {
-   "id": "ex0005m",
+   "id": "ex0005q",
    "kind": "moodboard",
    "name": "Mood board",
    "cards": [
     {
-     "id": "ex0005n",
+     "id": "ex0005r",
      "type": "text",
      "text": "Grey, wet, quiet. The warmth is in the hands, never in the light.",
      "caption": "The feeling",
      "wide": true
     },
     {
-     "id": "ex0005o",
+     "id": "ex0005s",
      "type": "palette",
      "colors": [
       "#2e3b42",
@@ -1295,7 +1363,7 @@
      "caption": "Sea fog + the rust-red of the Margit"
     },
     {
-     "id": "ex0005p",
+     "id": "ex0005t",
      "type": "palette",
      "colors": [
       "#3d2b1f",
@@ -1307,38 +1375,38 @@
      "caption": "Inside the wheelhouse: wood and brass"
     },
     {
-     "id": "ex0005q",
+     "id": "ex0005u",
      "type": "text",
      "text": "“Nobody can drive a boat. You just argue with it.”",
      "caption": "Elsa"
     },
     {
-     "id": "ex0005r",
+     "id": "ex0005v",
      "type": "text",
      "text": "Sounds: the diesel engine, gulls, the VHF radio hiss, rope on steel.",
      "caption": "Sound"
     },
     {
-     "id": "ex0005s",
+     "id": "ex0005w",
      "type": "link",
      "url": "https://www.openstreetmap.org/#map=13/55.04/10.6",
      "caption": "The real crossing"
     }
    ],
    "about": [
-    "ex0002g",
+    "ex0002i",
     "ex00029"
    ],
    "columns": 3
   },
   {
-   "id": "ex0004q",
+   "id": "ex0004u",
    "kind": "schedule",
    "name": "Shooting schedule",
    "sourceId": "ex00001",
    "days": [
     {
-     "id": "ex0004r",
+     "id": "ex0004v",
      "date": "2026-05-04",
      "call": "06:00",
      "notes": "Dawn scenes first. Fog machine on board.",
@@ -1349,7 +1417,7 @@
      ]
     },
     {
-     "id": "ex0004s",
+     "id": "ex0004w",
      "date": "2026-05-05",
      "call": "07:00",
      "notes": "Ferry sailing all day. Golden hour for the last scene.",
@@ -1360,7 +1428,7 @@
      ]
     },
     {
-     "id": "ex0004t",
+     "id": "ex0004x",
      "date": "2026-05-06",
      "call": "08:00",
      "notes": "",
@@ -1371,13 +1439,13 @@
    ],
    "events": [
     {
-     "id": "ex0004u",
+     "id": "ex0004y",
      "date": "2026-04-28",
      "title": "Table read",
      "notes": "At the production office"
     },
     {
-     "id": "ex0004v",
+     "id": "ex0004z",
      "date": "2026-04-30",
      "title": "Location scout: the Margit",
      "notes": ""
@@ -1400,10 +1468,10 @@
    }
   },
   {
-   "id": "ex0005t",
+   "id": "ex0005x",
    "kind": "locmap",
    "name": "Location map",
-   "scheduleId": "ex0004q",
+   "scheduleId": "ex0004u",
    "base": {
     "lat": 55.0612,
     "lng": 10.6098,
@@ -1412,14 +1480,14 @@
    "hiddenDays": []
   },
   {
-   "id": "ex0004w",
+   "id": "ex00050",
    "kind": "budget",
    "name": "Budget",
-   "scheduleId": "ex0004q",
+   "scheduleId": "ex0004u",
    "currency": "EUR",
    "manual": [
     {
-     "id": "ex0004x",
+     "id": "ex00051",
      "group": "general",
      "label": "Catering (whole crew & cast)",
      "unit": "per shoot day",
@@ -1427,7 +1495,7 @@
      "qty": ""
     },
     {
-     "id": "ex0004y",
+     "id": "ex00052",
      "group": "general",
      "label": "Insurance",
      "unit": "one-off",
@@ -1435,7 +1503,7 @@
      "qty": ""
     },
     {
-     "id": "ex0004z",
+     "id": "ex00053",
      "group": "post",
      "label": "Editing",
      "unit": "per week",
@@ -1443,7 +1511,7 @@
      "qty": "2"
     },
     {
-     "id": "ex00050",
+     "id": "ex00054",
      "group": "post",
      "label": "Music & sound mix",
      "unit": "one-off",
@@ -1451,7 +1519,7 @@
      "qty": ""
     },
     {
-     "id": "ex00051",
+     "id": "ex00055",
      "group": "transport",
      "label": "Camera package rental",
      "unit": "per shoot day",
@@ -1467,7 +1535,7 @@
    "scriptId": ""
   },
   {
-   "id": "ex00055",
+   "id": "ex00059",
    "kind": "note",
    "name": "Ideas & research",
    "text": "Research Real ferries replaced by bridges: talk to a retired captain VHF radio etiquette: “Margit, Margit, this is…” Possible title The Last Ferry / Crossing / Margit",
@@ -1475,7 +1543,7 @@
    "about": []
   },
   {
-   "id": "ex00053",
+   "id": "ex00057",
    "kind": "note",
    "name": "Elsa — notes",
    "text": "Elsa She never says what she feels. She does things: the coffee, the steering wheel, the hand on the hull. 41 years on the same crossing Husband Jens died six years ago — he kept the engine running Doesn’t hate the bridge. Hates being thanked . “Nobody can drive a boat. You just argue with it.”",
@@ -1483,10 +1551,10 @@
    "about": [
     "ex00029"
    ],
-   "folder": "ex00052"
+   "folder": "ex00056"
   },
   {
-   "id": "ex00054",
+   "id": "ex00058",
    "kind": "note",
    "name": "Noor — notes",
    "text": "Noor Not running from something dramatic. Running because nobody noticed she was sad. Her cousin on the island doesn’t know she’s coming. The phone call on the pier is the turn: she lets her mother come and get her.",
@@ -1494,7 +1562,7 @@
    "about": [
     "ex0002a"
    ],
-   "folder": "ex00052"
+   "folder": "ex00056"
   }
  ],
  "catalog": [
@@ -1509,13 +1577,63 @@
     "occupation": "Ferry captain",
     "want": "To make the last crossing on her own terms",
     "need": "To let her son into her world before it disappears",
-    "personality": "Dry, stubborn, kind in actions rather than words"
+    "personality": "Dry, stubborn, kind in actions rather than words",
+    "needScenes": [
+     "ex0001y"
+    ],
+    "contradiction": "A ferry captain who has never once let anyone else steer",
+    "strengthWeakness": "Her self-reliance kept the ferry running for 41 years — and keeps her son at arm’s length.",
+    "stakesStart": "Her pride: being seen at the opening of the bridge that ends her job.",
+    "stakesMid": "A sixteen-year-old in her care, in fog, with a failing engine.",
+    "stakesEnd": "Her son. If she refuses him today, there is no ferry left to share.",
+    "wound": "Her husband, the ferry’s engineer, died at sea. She kept working the next morning.",
+    "woundScenes": [
+     "ex0000y"
+    ],
+    "lie": "If you need no one, no one can be taken from you.",
+    "truth": "Letting someone in is not the same as losing them.",
+    "secret": "She has already accepted a job at the bridge’s visitor centre.",
+    "secretFrom": "Tomas",
+    "line": "No one else steers the Margit.",
+    "lineScenes": [
+     "ex0001c"
+    ]
    },
    "links": {
     "playedBy": "ex0002c"
    },
    "media": [],
-   "custom": []
+   "custom": [],
+   "arcs": [
+    {
+     "id": "ex0002f",
+     "label": "Letting her son in",
+     "low": "shut out",
+     "high": "side by side",
+     "points": {
+      "ex00003": 1,
+      "ex0000a": 0,
+      "ex0000y": 2,
+      "ex0001c": 3,
+      "ex0001n": 6,
+      "ex0001y": 9
+     }
+    }
+   ],
+   "interview": [
+    {
+     "id": "ex0002t",
+     "cat": "Under pressure",
+     "q": "What is the first thing they would grab if their home was on fire?",
+     "a": "The logbook. Every crossing since 1983, in her handwriting and his."
+    },
+    {
+     "id": "ex0002u",
+     "cat": "In this story",
+     "q": "What would happen to them if the story never started?",
+     "a": "She would sail the last crossing alone, tie up, and never come back to the harbour."
+    }
+   ]
   },
   {
    "id": "ex0002a",
@@ -1526,13 +1644,37 @@
    "fields": {
     "age": "16",
     "want": "To get as far from home as possible",
-    "need": "Someone to meet her halfway"
+    "need": "Someone to meet her halfway",
+    "needScenes": [
+     "ex0001n"
+    ],
+    "contradiction": "Running away, but answering the phone in her head every time it buzzes",
+    "stakesStart": "Getting caught and sent home.",
+    "stakesMid": "Her life, on a broken ferry in the fog.",
+    "stakesEnd": "Her mother — if she does not call now, she might never.",
+    "wound": "A fight with her mother she cannot take back.",
+    "lie": "Nobody would notice if I disappeared.",
+    "truth": "Her mother has called nine times."
    },
    "links": {
     "playedBy": "ex0002d"
    },
    "media": [],
-   "custom": []
+   "custom": [],
+   "arcs": [
+    {
+     "id": "ex0002g",
+     "label": "Courage",
+     "low": "running away",
+     "high": "facing home",
+     "points": {
+      "ex0000p": 1,
+      "ex0000y": 3,
+      "ex0001c": 6,
+      "ex0001n": 8
+     }
+    }
+   ]
   },
   {
    "id": "ex0002b",
@@ -1542,7 +1684,14 @@
    "tags": "",
    "fields": {
     "age": "Mid 40s",
-    "occupation": "Bridge engineer"
+    "occupation": "Bridge engineer",
+    "want": "His mother at the bridge opening",
+    "need": "To stop asking her permission to be proud",
+    "contradiction": "Builds bridges for a living, cannot build one to his mother",
+    "stakesStart": "An empty front-row seat.",
+    "stakesEnd": "Being the man who took his mother’s life’s work away.",
+    "secret": "He named the bridge after his father.",
+    "secretFrom": "Elsa"
    },
    "links": {
     "playedBy": "ex0002e"
@@ -1594,7 +1743,7 @@
    "custom": []
   },
   {
-   "id": "ex0002f",
+   "id": "ex0002h",
    "category": "location",
    "name": "HARBOUR",
    "description": "",
@@ -1611,7 +1760,7 @@
    "custom": []
   },
   {
-   "id": "ex0002g",
+   "id": "ex0002i",
    "category": "location",
    "name": "FERRY",
    "description": "The Margit, a 1968 car ferry. Rented with her own crew.",
@@ -1621,14 +1770,23 @@
     "priceUnit": "per shoot day",
     "facilities": "Working car ferry with crew, 3 vehicles on deck",
     "lat": "55.040000",
-    "lng": "10.598000"
+    "lng": "10.598000",
+    "meaning": "For Elsa: her marriage, her work, her whole adult life. For Noor: an escape route. For Tomas: the thing he is replacing.",
+    "power": "Elsa rules the bridge of the ship. Everyone else is a passenger — until the engine dies.",
+    "onlyHere": "Two strangers trapped together with nowhere to walk away to.",
+    "placeSecret": "Her husband’s initials are scratched into the engine room door.",
+    "placeChange": "From the place Elsa hides to the place she shares with her son.",
+    "sound": "The diesel thrum, a loose chain rattling on the car deck, gulls.",
+    "smell": "Diesel, salt, wet rope, coffee.",
+    "light": "Flat grey daylight, then the green pier lamp through the fog.",
+    "temperature": "Cold wind on deck; the wheelhouse warm and fogged up."
    },
    "links": {},
    "media": [],
    "custom": []
   },
   {
-   "id": "ex0002h",
+   "id": "ex0002j",
    "category": "location",
    "name": "ISLAND PIER",
    "description": "",
@@ -1645,35 +1803,47 @@
    "custom": []
   },
   {
-   "id": "ex0002i",
+   "id": "ex0002k",
    "category": "prop",
    "name": "Dented thermos",
    "description": "",
    "tags": "",
    "fields": {
     "price": "15",
-    "priceUnit": "one-off"
+    "priceUnit": "one-off",
+    "setupScenes": [
+     "ex0000y"
+    ],
+    "payoffScenes": [
+     "ex0001y"
+    ],
+    "reveals": "Elsa takes care of people without saying so.",
+    "itemChange": "She pours the last cup for Tomas."
    },
    "links": {},
    "media": [],
    "custom": []
   },
   {
-   "id": "ex0002j",
+   "id": "ex0002l",
    "category": "prop",
    "name": "VHF radio handset",
    "description": "",
    "tags": "",
    "fields": {
     "price": "20",
-    "priceUnit": "per shoot day"
+    "priceUnit": "per shoot day",
+    "setupScenes": [
+     "ex0000a"
+    ],
+    "reveals": "Elsa would rather talk to her son through a machine."
    },
    "links": {},
    "media": [],
    "custom": []
   },
   {
-   "id": "ex0002k",
+   "id": "ex0002m",
    "category": "prop",
    "name": "Noor’s backpack",
    "description": "",
@@ -1687,7 +1857,7 @@
    "custom": []
   },
   {
-   "id": "ex0002l",
+   "id": "ex0002n",
    "category": "wardrobe",
    "name": "Elsa’s captain coat",
    "description": "",
@@ -1705,7 +1875,7 @@
    "custom": []
   },
   {
-   "id": "ex0002m",
+   "id": "ex0002o",
    "category": "vehicle",
    "name": "White delivery van",
    "description": "",
@@ -1719,7 +1889,7 @@
    "custom": []
   },
   {
-   "id": "ex0002n",
+   "id": "ex0002p",
    "category": "crew",
    "name": "Director of photography",
    "description": "",
@@ -1734,7 +1904,7 @@
    "custom": []
   },
   {
-   "id": "ex0002o",
+   "id": "ex0002q",
    "category": "crew",
    "name": "Sound recordist",
    "description": "",
@@ -1748,7 +1918,7 @@
    "custom": []
   },
   {
-   "id": "ex0002p",
+   "id": "ex0002r",
    "category": "crew",
    "name": "Gaffer",
    "description": "",
@@ -1762,7 +1932,7 @@
    "custom": []
   },
   {
-   "id": "ex0002q",
+   "id": "ex0002s",
    "category": "sfx",
    "name": "Fog machine",
    "description": "",
@@ -1776,10 +1946,16 @@
    "custom": []
   }
  ],
+ "submission": {
+  "genre": "Family drama",
+  "comps": "Aftersun meets Local Hero",
+  "short": "Elsa has captained the same small car ferry for forty-one years; tomorrow a bridge replaces it. On her final day she finds Noor, a sixteen-year-old runaway, hiding in a van on the car deck. Fog and a failing engine force the two to rely on each other — Elsa even lets Noor steer. At the island pier waits Elsa’s son Tomas, the engineer who built the bridge. Noor calls her mother to come and get her; Elsa, who has refused every invitation to the opening, lets Tomas ride the last crossing beside her as they pass under the bridge he built.",
+  "bio": "I write small stories about big changes, mostly set by the sea. My short films have played at regional festivals, and this is my first feature-length project in development."
+ },
  "logline": "On the last day before a bridge replaces her ferry, a stubborn old captain finds a runaway teenager on board — and has one crossing left to make peace with her son.",
  "folders": [
   {
-   "id": "ex00052",
+   "id": "ex00056",
    "name": "Character notes",
    "open": true
   }

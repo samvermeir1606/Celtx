@@ -14,8 +14,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap">
-  <link rel="stylesheet" href="css/app.css?v=9">
-  <link rel="stylesheet" href="css/script.css?v=9">
+  <link rel="stylesheet" href="css/app.css?v=13">
+  <link rel="stylesheet" href="css/script.css?v=13">
   <style id="page-size-style">@page { size: letter; }</style>
 </head>
 <body>
@@ -44,13 +44,16 @@
         <div class="dropdown">
           <button class="btn ghost" data-dropdown aria-haspopup="true">Export ▾</button>
           <div class="dropdown-menu align-right" role="menu">
+            <button class="menu-item" data-action="export-pdf">PDF — exact pages (.pdf)…</button>
             <button class="menu-item" data-action="print">Print / Save as PDF…<span class="kbd-hint">Ctrl+P</span></button>
+            <button class="menu-item" data-action="palette">All commands…<span class="kbd-hint">Ctrl+K</span></button>
             <div class="menu-sep"></div>
             <button class="menu-item" data-action="export-fountain">Fountain (.fountain)</button>
             <button class="menu-item" data-action="export-fdx">Final Draft (.fdx)</button>
             <button class="menu-item" data-action="export-txt">Plain text (.txt)</button>
             <div class="menu-sep"></div>
             <button class="menu-item" data-action="review-copy">Review copy for a reader (.html)…</button>
+            <button class="menu-item" data-action="submission">Submission package (script, one-sheet, synopsis, letter)…</button>
             <div class="menu-sep"></div>
             <button class="menu-item" data-action="saveas">Save project as…<span class="kbd-hint">Ctrl+Shift+S</span></button>
           </div>
@@ -128,25 +131,29 @@
   <div id="print-root"></div>
   <div id="modal-root"></div>
   <div id="toasts" aria-live="polite"></div>
-  <div class="drop-overlay">Drop a .scriptdesk, .celtx, .fountain or .fdx file to open it</div>
-  <input type="file" id="file-input" accept=".scriptdesk,.scriptdesk-review,.json,.celtx,.fountain,.spmd,.txt,.fdx" hidden>
+  <div class="drop-overlay">Drop a .scriptdesk, .celtx, .fountain, .fdx or .md file to open it</div>
+  <input type="file" id="file-input" accept=".scriptdesk,.scriptdesk-review,.json,.celtx,.fountain,.spmd,.txt,.fdx,.md,.markdown" hidden>
 
-  <script src="js/formats.js?v=9"></script>
-  <script src="js/catalog.js?v=9"></script>
-  <script src="js/storyline.js?v=9"></script>
-  <script src="js/storyboard.js?v=9"></script>
-  <script src="js/beatboard.js?v=9"></script>
-  <script src="js/sketch.js?v=9"></script>
-  <script src="js/schedule.js?v=9"></script>
-  <script src="js/budget.js?v=9"></script>
-  <script src="js/timeline.js?v=9"></script>
-  <script src="js/relations.js?v=9"></script>
-  <script src="js/moodboard.js?v=9"></script>
-  <script src="js/locmap.js?v=9"></script>
-  <script src="js/review.js?v=9"></script>
-  <script src="js/touch.js?v=9"></script>
-  <script src="js/formats-io.js?v=9"></script>
-  <script src="js/editor.js?v=9"></script>
-  <script src="js/app.js?v=9"></script>
+  <script src="js/formats.js?v=13"></script>
+  <script src="js/catalog.js?v=13"></script>
+  <script src="js/storyline.js?v=13"></script>
+  <script src="js/storyboard.js?v=13"></script>
+  <script src="js/beatboard.js?v=13"></script>
+  <script src="js/sketch.js?v=13"></script>
+  <script src="js/schedule.js?v=13"></script>
+  <script src="js/budget.js?v=13"></script>
+  <script src="js/timeline.js?v=13"></script>
+  <script src="js/relations.js?v=13"></script>
+  <script src="js/moodboard.js?v=13"></script>
+  <script src="js/locmap.js?v=13"></script>
+  <script src="js/review.js?v=13"></script>
+  <script src="js/touch.js?v=13"></script>
+  <script src="js/paginate.js?v=13"></script>
+  <script src="js/pdf.js?v=13"></script>
+  <script src="js/markdown.js?v=13"></script>
+  <script src="js/formats-io.js?v=13"></script>
+  <script src="js/editor.js?v=13"></script>
+  <script src="js/discover.js?v=13"></script>
+  <script src="js/app.js?v=13"></script>
 </body>
 </html>

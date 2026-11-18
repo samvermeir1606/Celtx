@@ -135,7 +135,7 @@ C: ELSA
 D: I know.
 A: On the shrinking pier, Noor waves. Elsa lifts one hand from the rail.
 T: FADE OUT.
-`, { title: 'The Last Ferry', author: 'A Scriptdesk example', draftDate: 'Example draft' });
+`, { title: 'The Last Ferry', author: 'A Scriptdesk example', draftDate: 'Example draft', contact: 'writer@example.com\n+00 000 00 00 00' });
   sp.elements.find((e) => e.text.startsWith('The engine coughs')).comments = [{ id: SD.uid(), text: 'Could we hear the silence for longer here? Hold on the fog.', quote: 'Silence, except for the water.', start: 23, end: 54, created: '2026-01-10T10:00:00.000Z', done: false, author: 'Anna (reader)' }];
   sp.elements.find((e) => e.text.startsWith('Where I')).comments = [{ id: SD.uid(), text: 'Best line in the script. Keep it.', quote: '', start: 0, end: 0, created: '2026-01-10T10:05:00.000Z', done: false, author: 'Anna (reader)' }];
 
@@ -146,6 +146,8 @@ T: FADE OUT.
   const aNoor = item('actor', 'Yara Benali', { price: '400', priceUnit: 'per shoot day' });
   const aTomas = item('actor', 'Pieter de Vries', { price: '500', priceUnit: 'per shoot day' });
   elsa.links.playedBy = aElsa.id; noor.links.playedBy = aNoor.id; tomas.links.playedBy = aTomas.id;
+  elsa.arcs = [{ id: SD.uid(), label: 'Letting her son in', low: 'shut out', high: 'side by side', points: {} }];
+  noor.arcs = [{ id: SD.uid(), label: 'Courage', low: 'running away', high: 'facing home', points: {} }];
   const harbour = item('location', 'HARBOUR', { price: '250', priceUnit: 'per shoot day', address: 'Old ferry quay, Svendborg', lat: '55.059400', lng: '10.613200' });
   const ferry = item('location', 'FERRY', { price: '1800', priceUnit: 'per shoot day', facilities: 'Working car ferry with crew, 3 vehicles on deck', lat: '55.040000', lng: '10.598000' }, { description: 'The Margit, a 1968 car ferry. Rented with her own crew.' });
   const pier = item('location', 'ISLAND PIER', { price: '150', priceUnit: 'per shoot day', address: 'Ferry pier, Tåsinge', lat: '55.012000', lng: '10.587000' });
@@ -161,13 +163,63 @@ T: FADE OUT.
   const sc = scenesOf(sp);
   const tag = (i, ...items) => { sc[i].el.items = items.map((x) => x.id); };
   [2, 3, 6, 4, 9, 5, 7].forEach((t, i) => { sc[i].el.temp = t; });
+  [1, 0, null, 2, 3, 6, 9].forEach((v, i) => { if (v != null) elsa.arcs[0].points[sc[i].id] = v; });
+  [null, null, 1, 3, 6, 8, null].forEach((v, i) => { if (v != null) noor.arcs[0].points[sc[i].id] = v; });
   sc[0].el.timing = { manual: 58 };
+  // what each scene is for, and how things change
+  const purpose = [
+    { pov: 'ELSA', want: 'one last ordinary crossing', obstacle: 'the bridge, almost finished', turn: 'she talks to the boat like a person', from: 'routine', to: 'goodbye', polarity: '-' },
+    { pov: 'ELSA', want: 'to be left alone', obstacle: 'Tomas on the radio', turn: 'she refuses the front-row seat', from: 'distant', to: 'more distant', polarity: '-' },
+    { pov: 'ELSA', want: 'a clean deck', obstacle: 'a stowaway in the van', turn: 'she finds Noor', from: 'alone', to: 'responsible for someone', polarity: '±' },
+    { pov: 'NOOR', want: 'to not be asked questions', obstacle: 'Elsa asks anyway', turn: 'Elsa tells her about her father', from: 'strangers', to: 'listening', polarity: '+' },
+    { pov: 'NOOR', want: 'to get off the boat', obstacle: 'fog and a dead engine', turn: 'Elsa puts her at the wheel', from: 'scared', to: 'proud', polarity: '+' },
+    { pov: 'ELSA', want: 'to avoid thanks', obstacle: 'Tomas is waiting at the pier', turn: 'Noor calls her mother', from: 'hiding', to: 'seen', polarity: '±' },
+    { pov: 'ELSA', want: 'to finish the crossing', obstacle: 'it is the very last one', turn: 'she lets Tomas stand beside her', from: 'apart', to: 'together', polarity: '+' },
+  ];
+  purpose.forEach((pp, i) => { sc[i].el.purpose = pp; });
   sc[3].el.timing = { read: 96 };
   tag(0, harbour, coat); tag(1, radio, coat); tag(2, van, backpack); tag(3, thermos, coat, backpack); tag(4, fog, coat); tag(5, pier, backpack); tag(6, coat);
+  // the story behind the people, places and things
+  Object.assign(elsa.fields, {
+    needScenes: [sc[6].id], contradiction: 'A ferry captain who has never once let anyone else steer',
+    strengthWeakness: 'Her self-reliance kept the ferry running for 41 years — and keeps her son at arm’s length.',
+    stakesStart: 'Her pride: being seen at the opening of the bridge that ends her job.', stakesMid: 'A sixteen-year-old in her care, in fog, with a failing engine.', stakesEnd: 'Her son. If she refuses him today, there is no ferry left to share.',
+    wound: 'Her husband, the ferry’s engineer, died at sea. She kept working the next morning.', woundScenes: [sc[3].id],
+    lie: 'If you need no one, no one can be taken from you.', truth: 'Letting someone in is not the same as losing them.',
+    secret: 'She has already accepted a job at the bridge’s visitor centre.', secretFrom: 'Tomas', line: 'No one else steers the Margit.', lineScenes: [sc[4].id],
+  });
+  Object.assign(noor.fields, {
+    needScenes: [sc[5].id], contradiction: 'Running away, but answering the phone in her head every time it buzzes',
+    stakesStart: 'Getting caught and sent home.', stakesMid: 'Her life, on a broken ferry in the fog.', stakesEnd: 'Her mother — if she does not call now, she might never.',
+    wound: 'A fight with her mother she cannot take back.', lie: 'Nobody would notice if I disappeared.', truth: 'Her mother has called nine times.',
+  });
+  Object.assign(tomas.fields, {
+    want: 'His mother at the bridge opening', need: 'To stop asking her permission to be proud', contradiction: 'Builds bridges for a living, cannot build one to his mother',
+    stakesStart: 'An empty front-row seat.', stakesEnd: 'Being the man who took his mother’s life’s work away.',
+    secret: 'He named the bridge after his father.', secretFrom: 'Elsa',
+  });
+  Object.assign(ferry.fields, {
+    meaning: 'For Elsa: her marriage, her work, her whole adult life. For Noor: an escape route. For Tomas: the thing he is replacing.',
+    power: 'Elsa rules the bridge of the ship. Everyone else is a passenger — until the engine dies.',
+    onlyHere: 'Two strangers trapped together with nowhere to walk away to.', placeSecret: 'Her husband’s initials are scratched into the engine room door.',
+    placeChange: 'From the place Elsa hides to the place she shares with her son.',
+    sound: 'The diesel thrum, a loose chain rattling on the car deck, gulls.', smell: 'Diesel, salt, wet rope, coffee.', light: 'Flat grey daylight, then the green pier lamp through the fog.', temperature: 'Cold wind on deck; the wheelhouse warm and fogged up.',
+  });
+  Object.assign(thermos.fields, { setupScenes: [sc[3].id], payoffScenes: [sc[6].id], reveals: 'Elsa takes care of people without saying so.', itemChange: 'She pours the last cup for Tomas.' });
+  Object.assign(radio.fields, { setupScenes: [sc[1].id], reveals: 'Elsa would rather talk to her son through a machine.' });
+  elsa.interview = [
+    { id: SD.uid(), cat: 'Under pressure', q: 'What is the first thing they would grab if their home was on fire?', a: 'The logbook. Every crossing since 1983, in her handwriting and his.' },
+    { id: SD.uid(), cat: 'In this story', q: 'What would happen to them if the story never started?', a: 'She would sail the last crossing alone, tie up, and never come back to the harbour.' },
+  ];
 
   const p = SD.newProject();
   SD.ui.project = p;
   p.title = 'The Last Ferry';
+  p.submission = {
+    genre: 'Family drama', comps: 'Aftersun meets Local Hero',
+    short: 'Elsa has captained the same small car ferry for forty-one years; tomorrow a bridge replaces it. On her final day she finds Noor, a sixteen-year-old runaway, hiding in a van on the car deck. Fog and a failing engine force the two to rely on each other — Elsa even lets Noor steer. At the island pier waits Elsa’s son Tomas, the engineer who built the bridge. Noor calls her mother to come and get her; Elsa, who has refused every invitation to the opening, lets Tomas ride the last crossing beside her as they pass under the bridge he built.',
+    bio: 'I write small stories about big changes, mostly set by the sea. My short films have played at regional festivals, and this is my first feature-length project in development.',
+  };
   p.logline = 'On the last day before a bridge replaces her ferry, a stubborn old captain finds a runaway teenager on board — and has one crossing left to make peace with her son.';
   p.documents = [sp];
   p.catalog = [elsa, noor, tomas, aElsa, aNoor, aTomas, harbour, ferry, pier, thermos, radio, backpack, coat, van, dop, sound, gaffer, fog];
@@ -277,8 +329,8 @@ T: FADE OUT.
   rel.sourceId = sp.id;
   rel.nodes = { [elsa.id]: { x: 550, y: 220 }, [noor.id]: { x: 300, y: 500 }, [tomas.id]: { x: 800, y: 500 } };
   rel.links = [
-    { id: SD.uid(), a: elsa.id, b: tomas.id, kind: 'family', label: 'mother & son, not talking', changes: [{ id: SD.uid(), sceneId: sc[6].id, kind: 'love', label: 'side by side again' }] },
-    { id: SD.uid(), a: elsa.id, b: noor.id, kind: 'rivals', label: 'stowaway', from: sc[2].id, changes: [{ id: SD.uid(), sceneId: sc[4].id, kind: 'friends', label: 'she lets Noor steer' }] },
+    { id: SD.uid(), a: elsa.id, b: tomas.id, kind: 'family', label: 'mother & son, not talking', wantsAB: 'To be left to finish her work alone', wantsBA: 'Her blessing for the bridge', unsaid: 'His father would have loved the bridge.', changes: [{ id: SD.uid(), sceneId: sc[6].id, kind: 'love', label: 'side by side again' }] },
+    { id: SD.uid(), a: elsa.id, b: noor.id, kind: 'rivals', label: 'stowaway', wantsAB: 'Her off the boat at the next pier', wantsBA: 'No questions', from: sc[2].id, changes: [{ id: SD.uid(), sceneId: sc[4].id, kind: 'friends', label: 'she lets Noor steer' }] },
     { id: SD.uid(), a: tomas.id, b: elsa.id, kind: 'secret', label: 'proud of the bridge, ashamed of it', directed: true, changes: [] },
   ];
 

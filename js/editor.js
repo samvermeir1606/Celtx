@@ -229,7 +229,10 @@
         const text = this.blockText(b).replace(/\n/g, ' ');
         const fmt = b.querySelector('b, i, u, strong, em, span, font') ? this.blockFmt(b) : [];
         const prev = old.get(id);
-        const e = prev || { id };
+        // during a production revision, changed and new lines are marked
+        const rev = this.opts.revision ? this.opts.revision() : null;
+        if (rev && (!prev || prev.text !== text || prev.type !== type)) { if (prev) prev.rev = rev; }
+        const e = prev || Object.assign({ id }, rev ? { rev } : null);
         e.type = type; e.text = text;
         if (fmt.length) e.fmt = fmt; else delete e.fmt;
         out.push(e);

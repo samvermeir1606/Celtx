@@ -308,6 +308,7 @@ ${tpLines.join('\n')}
   }
 
   let jszipPromise = null;
+  SD.loadJSZip = () => loadJSZip();
   function loadJSZip() {
     if (window.JSZip) return Promise.resolve(window.JSZip);
     if (!jszipPromise) {

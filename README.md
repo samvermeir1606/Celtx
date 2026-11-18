@@ -5,6 +5,15 @@ A scriptwriting tool in the spirit of the old Celtx desktop app. It runs in the 
 ## Features
 
 - **Script editor that formats as you type.** Use Enter and Tab to move between Scene Heading, Action, Character, Parenthetical, Dialogue, Transition and Shot.
+- **Exact pages:** a page engine lays the script out the way production scripts are paginated (55 lines, scene headings never left alone at the bottom of a page, speeches split after a sentence with **(MORE)** and **(CONT'D)**, dual dialogue side by side). The editor shows where every page starts (the *Pages* checkbox), and every page number in the app comes from it.
+- **PDF:** Export → *PDF — exact pages* makes the PDF itself, in Courier, so it is the same in every browser. It can include the title page, scene numbers in both margins, and revision marks, or only the revised pages. Printing (Ctrl+P) uses the same pages.
+- **Production revisions:** *Production ▾* locks the scene numbers. New scenes then get numbers like 12A, and deleted scenes print as OMITTED. *Start a revision* (Blue, Pink, Yellow…) marks every changed line with an asterisk, and revised pages carry the revision name and date in their header. You can also print only the revised pages.
+- **Focus mode** (◎ Focus or Ctrl+Shift+Enter): only the page. The line you're on stays at the same height, other paragraphs fade, and there's an optional dark page. Esc leaves.
+- **Outline:** acts and scenes as a list. Drag scenes or act breaks to reorder the script, and edit synopses. You can also drag scenes in the sidebar's scene list.
+- **Scene purpose cards:** for each scene, whose scene it is, what they want, what's in the way, what changes things, and whether it ends better or worse. Reports → Health shows which scenes turn and lists scenes where nothing changes.
+- **Character arcs** (the *Arcs* tab): track something that changes in a character, scene by scene from 0 to 10, drawn as lines next to the tension curve. Sliders for the characters in a scene also appear in the scene panel.
+- **Spell check that knows your script** (ABC in the toolbar): a US English dictionary (downloaded once) that doesn't flag your characters, locations or catalog names. Right-click a word for suggestions or to add it to the project dictionary.
+- **Keyboard first:** Ctrl+K opens every command, view, element, scene, document and catalog item; menus work with the arrow keys.
 - **Dual dialogue:** put the cursor in a speech and press ⇉ Dual (Ctrl+D) to have it spoken at the same time as the speech before. The editor marks the pair; printing, PDF, review copies, Final Draft (`<DualDialogue>`) and Fountain (`^`) put them side by side.
 - **Bold, italic and underline** inside the script (Ctrl+B, Ctrl+I, Ctrl+U, or the B I U buttons). The formatting is kept in Fountain (`**bold**`, `*italic*`, `_underline_`), Final Draft, Celtx imports, printing and review copies.
 - **Seven script types:** Screenplay, TV Drama (single camera), Sitcom (multi-camera), Stage Play, Audio Play, Comic Book and AV Script (two columns: video on the left, audio on the right). Comic pages and panels are numbered automatically.
@@ -24,16 +33,19 @@ A scriptwriting tool in the spirit of the old Celtx desktop app. It runs in the 
 - **Scene navigator** showing page-length estimates in eighths.
 - **Scene panel** for each scene's synopsis, colour, notes, characters (detected automatically) and breakdown items (props, wardrobe, vehicles, effects…).
 - **Master Catalog** shared by every script in the project, with a detailed form for each kind of item, following the old Celtx forms:
-  - **Character:** physical description, personality, motivation, background, voice, arc, and *Played by* (an Actor).
+  - **Character:** a *Story core* (want, need, contradiction, a strength that becomes a weakness), a *stakes ladder* (what they could lose at the start, the middle and the climax), *wound, lie & truth*, a secret and a line they will never cross. Link the scenes where we see the need, the wound, the secret and the line crossed; a field you filled in but never linked says *Not on screen yet*. Plus physical description, personality, background, voice, arc, and *Played by* (an Actor).
   - **Actor:** roles, availability, contact details and wardrobe sizes.
-  - **Location:** address, contact and facility details.
-  - **Props, wardrobe and other production items:** who uses them, size, era, procurement and supplier.
+  - **Location:** what the place means, who has power there, what can only happen there, its secret, how it changes, and its sound, smell, light and temperature. Plus address, contact and facility details.
+  - **Props, wardrobe and other production items:** *In the story* (the scene where it is planted and where it pays off, what it says about its owner), plus who uses them, size, era, procurement and supplier.
+  - **Discover:** an interview on every character, location and item. *Ask me something* asks one question at a time from a bank of about 100 (daily life, the past, fears, under pressure, beliefs, this story…), or your own. The answers stay on the page, print on character sheets, and are searchable.
   - **Every item:** photos, tags, your own extra fields, and a list of the scenes it appears in.
+- **Setups & payoffs** (Reports): every planted item with the scenes it is set up and paid off in, warnings for payoffs that are never set up (or come first), and each character's need, wound, secret and line with the scene that shows it.
+- **Who wants what** (Reports → Health): the main characters' wants, needs, stakes and contradictions side by side, with warnings when a want equals a need, two characters want the same thing, or the lead has nothing to lose. The Home page lists the same gaps.
 - **Character sheets and actor packs:** printable pages that give an actor the full profile of their character, the scene list, and *sides* (the text of their scenes with their lines in bold).
 - **Index cards** that you drag to reorder scenes.
 - **Scene versions:** in the scene panel, *Save a version* keeps a copy of the scene, so you can try it another way. You can switch between versions at any time (Undo works) and compare two side by side. The scene heading stays, so storyboard, schedule and beat-board links keep working.
 - **Timeline (story order vs. plot order):** your scenes in the order you tell them next to the order they happen, joined by lines. Drag to set the story order; flashbacks and flash-forwards are found and marked. You can add backstory events that are never shown, and a "when" to anything ("1962", "Day 3, night").
-- **Relationship map:** characters as dots you can drag around, linked by lines such as love, family, friends, rivals, enemies, secret or ended. Each line has a short label and can be one-way. A line can begin at a scene and change at later scenes. The *Story so far* slider steps through the script to show how relationships change, and characters who haven't appeared yet are faded.
+- **Relationship map:** characters as dots you can drag around, linked by lines such as love, family, friends, rivals, enemies, secret or ended. Each line has a short label and can be one-way, and says what each one wants from the other and what is never said between them. A line can begin at a scene and change at later scenes. The *Story so far* slider steps through the script to show how relationships change, and characters who haven't appeared yet are faded.
 - **Mood board:** pictures (open, drop or paste), colour palettes (🎨 pulls the main colours out of a picture), words and links to music or clips. It can be linked to characters and locations, and prints in landscape.
 - **Location map:** catalog locations as pins on an OpenStreetMap map. Place them by clicking, dragging or searching an address. It also shows each shoot day's route from the schedule with distances (straight lines) and a base camp. The map needs an internet connection; address searches are sent to OpenStreetMap, nothing else is.
 - **Storyline:** a flow chart with one line per character, drawn across the moments of your story:
@@ -56,8 +68,9 @@ A scriptwriting tool in the spirit of the old Celtx desktop app. It runs in the 
 - **Production schedule:** a strip board with strips coloured by interior/exterior and day/night, and cast numbers.
   - Drag scenes onto shoot days, or let **Auto-schedule** group them by location and day/night with a page limit per day.
   - It also has a calendar with shoot days and events, a one-line schedule, printable call sheets, *mark as shot*, and an `.ics` download for calendar apps.
-- **Notes** with formatting: headings, bold, italic, lists, quotes. A note can be linked to characters or locations. Their catalog page then lists the note, and **+ New note about…** files a new one in a folder such as “Character notes”.
+- **Notes** with formatting: headings, bold, italic, lists, quotes, code. **Markdown** works too: type `# `, `- `, `1. `, `> `, `**bold**`, `*italic*`, `~~strike~~`, `` `code` `` or `[link](https://…)` and it formats as you type. Pasted Markdown arrives formatted, *M↓ Markdown* switches the note to its Markdown source, and you can download notes as `.md` or open `.md` files as notes. A note can be linked to characters or locations. Their catalog page then lists the note, and **+ New note about…** files a new one in a folder such as “Character notes”.
 - **Budget:** what the production would cost. Prices live in the Master Catalog (every actor, crew member, location, prop… has a Budget section with a price per shoot day, per week, one-off or per item). The budget multiplies them by the days each is needed: from the production schedule, or estimated from the script's pages. Add your own lines (catering, insurance, editing…), plus contingency and tax. It shows totals per group, per shoot day and per page, and exports to CSV or print.
+- **Submission package** (Export, Home, or Ctrl+K): one page to prepare everything an agent, producer, contest or fund asks for. You fill in or check the logline, genre, comparable titles, a short synopsis, a longer synopsis (drafted from your scene synopses), the main characters, a short bio and a query letter. The letter is written from those fields and stays editable. Each part has a preview and a "before you send" checklist, and *Download package* makes one ZIP with the full script, sample pages, one-sheet, synopsis, character bios and query letter as PDFs. It's all saved in the project.
 - **Review copy:** Export → *Review copy* makes one HTML file to send to a reader. They open it in any browser, select words, comment, and download a small comments file. Drop that file onto Scriptdesk and their comments appear in the script with their name.
 - **Install it and work offline:** in Chrome or Edge use *Install app* (or the install icon in the address bar); on an iPhone or iPad use Share → Add to Home Screen. After the first visit it opens without an internet connection, and the installed app can open `.scriptdesk` files by double-clicking.
 - **Touch:** on tablets and phones, press and hold anything you can drag (cards, strips, shots, documents), then move it. Buttons are bigger, and a ⇥ button does what Tab does in the script.
@@ -84,7 +97,7 @@ To publish on GitHub Pages:
 2. In the repository, go to **Settings → Pages** and set **Source** to `Deploy from a branch`, branch `main`, folder `/ (root)`.
 3. The site appears at `https://<user>.github.io/<repo>/`.
 
-**After changing any file**, increase the `?v=` number on the `<link>` and `<script>` tags in `index.html` (for example `?v=9` to `?v=10`) and `VERSION` in `sw.js` to the same number. The new `VERSION` makes installed copies fetch the update. GitHub Pages lets browsers cache files for 10 minutes. Without a new number, a visitor can get the new page together with old cached scripts, and new buttons then silently do nothing.
+**After changing any file**, increase the `?v=` number on the `<link>` and `<script>` tags in `index.html` (for example `?v=13` to `?v=14`) and `VERSION` in `sw.js` to the same number. The new `VERSION` makes installed copies fetch the update. GitHub Pages lets browsers cache files for 10 minutes. Without a new number, a visitor can get the new page together with old cached scripts, and new buttons then silently do nothing.
 
 ## Files
 
@@ -95,7 +108,10 @@ To publish on GitHub Pages:
 | `css/script.css` | Script page formatting (screen and print) |
 | `js/formats.js` | Script types, elements, page estimates, helpers |
 | `js/catalog.js` | Catalog categories, the form for each category, links between items |
+| `js/discover.js` | The Discover question bank for characters, locations and items |
 | `js/storyline.js` | Storyline chart: data, layout, script sync, SVG drawing |
+| `js/paginate.js` | The page engine: exact pagination, (MORE)/(CONT'D), page breaks |
+| `js/pdf.js` | PDF export and printed pages; locked scene numbers and revisions |
 | `js/storyboard.js` | Storyboard: sequences, shots, shot types, script sync, drafting shots |
 | `js/beatboard.js` | Beat board: story structures, scene and note cards |
 | `js/sketch.js` | Sketch: top-down set plans with cameras, lights, actors and set pieces |

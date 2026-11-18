@@ -97,9 +97,11 @@
       onChange: onEditorChange,
       onCaret,
       getSuggestions,
-      onRender: () => refreshHighlights(),
+      onRender: () => { refreshHighlights(); updatePageViewSoon(); refreshSpellSoon(); },
+      revision: () => { const r = editor && editor.doc && SD.currentRevision(editor.doc); return r ? r.id : null; },
     });
     bindChrome();
+    editor.root.addEventListener('contextmenu', spellMenu);
     applyZoom(+store.get(KEYS.zoom) || 100);
 
     let restored = null;
@@ -137,6 +139,7 @@
     editor.doc = null;
     applyProjectSettings();
     stopTableRead(true);
+    if (!!p.settings.spell !== spell.on) { spell.on = !!p.settings.spell; editor.root.spellcheck = !spell.on; if (spell.on) loadDictionary().then(refreshSpell).catch(() => { spell.on = false; editor.root.spellcheck = true; }); else setHighlight('sd-spell', []); }
     closeFind(false);
     logToday();
     renderAll();
@@ -208,6 +211,9 @@
     markDirty();
     refreshDerived();
     if (finder.open) runFindSoon();
+    updatePageViewSoon();
+    refreshSpellSoon();
+    if (document.body.classList.contains('focus-mode')) updateFocusCount();
   }
 
   function onCaret(info) {
@@ -216,6 +222,7 @@
     const sel = $('#element-select');
     if (sel && sel.value !== info.type) sel.value = info.type;
     state.caretIndex = info.index;
+    typewriter();
     const st = SD.SCRIPT_TYPES[d.scriptType].sceneType;
     const blocks = editor.root.children;
     let sid = null;
@@ -391,7 +398,7 @@
     state.docId = id;
     state.sceneId = null;
     const d = currentDoc();
-    if (d && d.kind === 'script' && !['script', 'title', 'cards', 'reports'].includes(state.view)) state.view = 'script';
+    if (d && d.kind === 'script' && !['script', 'title', 'outline', 'cards', 'arcs', 'reports'].includes(state.view)) state.view = 'script';
     if (d && d.kind === 'script') state.view = state.view || 'script';
     state.editorStale = true;
     document.body.classList.remove('show-sidebar');
@@ -563,11 +570,12 @@
     }
     if (!d || d.kind !== 'script') {
       $('#scene-head-label').textContent = 'Scenes';
-      list.replaceChildren(h('li', { class: 'side-empty' }, isCatalog() || isHome() ? 'Pick a script to see its scenes.' : 'Notes have no scenes.'));
+      list.replaceChildren(h('li', { class: 'side-empty' }, isCatalog() || isHome() || isSubmit() ? 'Pick a script to see its scenes.' : 'Notes have no scenes.'));
       $('#scene-count').textContent = '';
       return;
     }
     const scenes = SD.getScenes(d);
+    bindSceneDrag();
     $('#scene-head-label').textContent = d.scriptType === 'comic' ? 'Pages' : 'Scenes';
     $('#scene-count').textContent = scenes.length || '';
     if (!scenes.length) {
@@ -581,7 +589,8 @@
         class: 'scene-item' + (s.id === state.sceneId ? ' current' : ''),
         dataset: { id: s.id },
         style: s.el.color ? `--scene-color:${s.el.color}` : '',
-        title: s.el.synopsis || label,
+        title: (s.el.synopsis || label) + ' — drag to move the scene',
+        draggable: 'true',
         onclick: () => goToScene(s.id),
       },
       h('span', { class: 'scene-num' }, s.number),
@@ -611,6 +620,7 @@
     const d = currentDoc();
     if (reader.on && (!d || d.id !== reader.docId || state.view !== 'script')) stopTableRead(true);
     if (finder.open && (!d || d.kind !== 'script' || state.view !== 'script')) closeFind(false);
+    if (document.body.classList.contains('focus-mode') && (!d || d.kind !== 'script' || state.view !== 'script')) toggleFocus(false);
     const showEditor = !!(d && d.kind === 'script' && state.view === 'script');
     $('#editor-wrap').hidden = !showEditor;
     $('#other-view').hidden = showEditor;
@@ -628,6 +638,7 @@
       ov.scrollTop = 0;
       if (isCatalog()) renderCatalog(ov);
       else if (isHome()) renderHome(ov);
+      else if (isSubmit()) renderSubmission(ov);
       else if (!d) ov.append(h('div', { class: 'empty-state' }, h('p', {}, 'This project has no documents. Use + in the sidebar to add one.')));
       else if (d.kind === 'note') renderNote(ov, d);
       else if (d.kind === 'storyline') renderStoryline(ov, d);
@@ -635,6 +646,8 @@
       else if (SD.KINDS[d.kind]) SD.KINDS[d.kind].render(ov, d);
       else if (state.view === 'title') renderTitleView(ov, d);
       else if (state.view === 'cards') renderCards(ov, d);
+      else if (state.view === 'outline') renderOutline(ov, d);
+      else if (state.view === 'arcs') renderArcs(ov, d);
       else if (state.view === 'reports') renderReports(ov, d);
     }
     renderNavigator();
@@ -653,6 +666,7 @@
     const d = currentDoc();
     if (isCatalog()) { tabs.replaceChildren(h('div', { class: 'view-title' }, '🗂️ Master Catalog')); return; }
     if (isHome()) { tabs.replaceChildren(h('div', { class: 'view-title' }, '🏠 ' + (state.project.title || 'Home'))); return; }
+    if (isSubmit()) { tabs.replaceChildren(h('div', { class: 'view-title' }, '📨 Submission package')); return; }
     if (!d) { tabs.replaceChildren(); return; }
     if (d.kind === 'note') { tabs.replaceChildren(h('div', { class: 'view-title' }, '📝 ' + d.name)); return; }
     if (SD.KINDS[d.kind]) {
@@ -679,7 +693,7 @@
       }, label)));
       return;
     }
-    const defs = [['script', 'Script'], ['title', 'Title Page'], ['cards', d.scriptType === 'comic' ? 'Page Cards' : 'Index Cards'], ['reports', 'Reports']];
+    const defs = [['script', 'Script'], ['title', 'Title Page'], ['outline', 'Outline'], ['cards', d.scriptType === 'comic' ? 'Page Cards' : 'Index Cards'], ['arcs', 'Arcs'], ['reports', 'Reports']];
     tabs.replaceChildren(...defs.map(([v, label]) => h('button', {
       class: 'tab' + (state.view === v ? ' active' : ''),
       onclick: () => setView(v),
@@ -722,11 +736,17 @@
         h('button', { class: 'icon-btn', title: 'Redo (Ctrl+Y)', 'aria-label': 'Redo', onclick: () => editor.redo() }, '↷')),
       h('div', { class: 'tb-group' },
         ['b', 'i', 'u'].map((k) => h('button', { class: 'icon-btn fmt-' + k, title: { b: 'Bold (Ctrl+B)', i: 'Italic (Ctrl+I)', u: 'Underline (Ctrl+U)' }[k] + ' — select words first', 'aria-label': { b: 'Bold', i: 'Italic', u: 'Underline' }[k], onmousedown: (e) => e.preventDefault(), onclick: () => editor.format(k) }, k.toUpperCase()))),
+      h('label', { class: 'tb-check', title: 'Show where every page starts' },
+        h('input', { type: 'checkbox', checked: s.pageView !== false, onchange: (e) => { s.pageView = e.target.checked; markDirty(); updatePageView(); } }), 'Pages'),
       h('label', { class: 'tb-check', title: 'Show scene numbers' },
         h('input', { type: 'checkbox', checked: s.sceneNumbers, onchange: (e) => { s.sceneNumbers = e.target.checked; applyProjectSettings(); markDirty(); } }), '#'),
       h('select', { class: 'select', title: 'Zoom', onchange: (e) => applyZoom(+e.target.value) },
         [75, 90, 100, 110, 125, 150].map((z) => h('option', { value: z, selected: z === state.zoom }, z + '%'))),
       h('div', { class: 'tb-group' },
+        h('button', { class: 'btn ghost small', title: 'Focus mode: only the page (Ctrl+Shift+Enter)', onclick: () => toggleFocus() }, '◎ Focus'),
+        h('button', { class: 'btn ghost small' + (spell.on ? ' on' : ''), title: 'Spell check that knows your characters and places', onclick: () => toggleSpell() }, spell.on ? 'ABC ✓' : 'ABC'),
+        (() => { const r = SD.currentRevision(d); const pr = SD.production(d); return h('button', { class: 'btn ghost small prod-btn', style: r ? `--rc:${r.color}` : '', title: 'Lock scene numbers and mark revisions', onclick: (e) => productionMenu(e.currentTarget, d) }, r ? '● ' + r.name : pr.locked ? '🔒 Locked' : 'Production ▾'); })(),
+        h('button', { class: 'btn ghost small', title: 'Download a PDF with exact pages', onclick: () => exportPDF() }, 'PDF'),
         h('button', { class: 'btn ghost small', title: 'Find & replace (Ctrl+F, Ctrl+H)', onclick: () => openFind(false) }, '🔍 Find'),
         h('button', { class: 'btn ghost small', title: 'Comment on the selected words (Ctrl+Alt+M)', onmousedown: (e) => e.preventDefault(), onclick: addComment }, '💬 Comment'),
         commentCount(d) ? h('button', { class: 'btn ghost small', title: 'All comments in this script', onclick: () => showAllComments(d) }, commentCount(d) + ' open') : null,
@@ -785,6 +805,7 @@
         h('div', { class: 'ins-title' }, (d.scriptType === 'comic' ? 'PAGE ' + sc.number + ' ' : '') + (e.text.toUpperCase() || '') || 'Untitled scene')),
       sceneCommentsSection(d, sc),
       sceneTempSection(d, sc),
+      scenePurposeSection(d, sc),
       sceneVersionsSection(d, sc),
       h('div', { class: 'ins-section' },
         h('label', { class: 'lbl' }, 'Synopsis'),
@@ -1067,6 +1088,7 @@
   function buildReport(d, tab) {
     const scenes = SD.getScenes(d);
     if (tab === 'health') return healthReport(d);
+    if (tab === 'setups') return setupsReport(d);
     if (tab === 'scenes') {
       return reportTable(['#', 'Scene', 'Page', 'Length', 'Characters', 'Synopsis'], scenes.map((s) => [
         s.number, s.el.text.toUpperCase() || '—', s.page, SD.eighths(s.lines), SD.sceneCharacters(d, s).join(', '), s.el.synopsis || '',
@@ -1116,7 +1138,7 @@
   }
 
   function renderReports(root, d) {
-    const tabs = [['health', 'Health'], ['scenes', 'Scenes'], ['characters', 'Characters'], ['locations', 'Locations'], ['breakdown', 'Breakdown sheets']];
+    const tabs = [['health', 'Health'], ['setups', 'Setups & payoffs'], ['scenes', 'Scenes'], ['characters', 'Characters'], ['locations', 'Locations'], ['breakdown', 'Breakdown sheets']];
     const words = SD.wordCount(d);
     const est = SD.estimate(d);
     const scenes = SD.getScenes(d);
@@ -2074,32 +2096,119 @@
   // ---------- Notes (rich text) ----------
   function renderNote(root, d) {
     if (typeof d.html !== 'string') d.html = SD.textToHtml(d.text);
-    const ed = h('div', { class: 'note-rich', contentEditable: 'true', spellcheck: true, 'data-placeholder': 'Ideas, outlines, research, character bios…' });
+    // the Markdown source view
+    if (state.noteMd) {
+      const ta = h('textarea', { class: 'note-md', spellcheck: true, value: SD.htmlToMarkdown(d.html), placeholder: '# A heading\n\nWrite in **Markdown**: *italic*, ~~strike~~, `code`, [links](https://…), - lists, > quotes', oninput: (e) => {
+        d.html = SD.sanitizeHtml(SD.markdownToHtml(e.target.value));
+        d.text = SD.htmlToPlain(d.html);
+        markDirty();
+        renderStatusSoon();
+      } });
+      root.append(h('div', { class: 'note-wrap' }, noteAboutBar(d), h('div', { class: 'note-page md' }, ta), h('p', { class: 'muted small note-md-help' }, 'Markdown view. Switch back with “Formatted” in the toolbar — the note keeps its formatting either way.')));
+      setTimeout(() => ta.focus(), 0);
+      return;
+    }
+    const ed = h('div', { class: 'note-rich', contentEditable: 'true', spellcheck: true, 'data-placeholder': 'Ideas, outlines, research… Markdown works too: # heading, - list, **bold**' });
     ed.innerHTML = SD.sanitizeHtml(d.html);
+    const ZWS = new RegExp(String.fromCharCode(0x200b), 'g');
     const save = () => {
-      d.html = ed.innerHTML;
-      d.text = ed.innerText.replace(/\n{3,}/g, '\n\n').trim();
+      d.html = ed.innerHTML.replace(ZWS, '');
+      d.text = ed.innerText.replace(ZWS, '').replace(/\n{3,}/g, '\n\n').trim();
       ed.classList.toggle('is-empty', !d.text);
       markDirty();
       renderStatusSoon();
     };
     ed.classList.toggle('is-empty', !ed.textContent.trim());
-    ed.addEventListener('input', save);
+    ed.addEventListener('input', (e) => { if (e.inputType === 'insertText') markdownShortcut(ed, e.data); save(); });
     ed.addEventListener('paste', (e) => {
       const html = e.clipboardData.getData('text/html');
       const text = e.clipboardData.getData('text/plain');
       if (!html && !text) return;
       e.preventDefault();
-      document.execCommand('insertHTML', false, html ? SD.sanitizeHtml(html) : SD.textToHtml(text) || SD.escapeHtml(text));
+      // Markdown copied as plain text (from Obsidian, GitHub, a code editor…) arrives formatted
+      const rich = html && /<(b|strong|i|em|u|h[1-6]|ul|ol|li|a|blockquote|table)[\s>]/i.test(html);
+      const md = !rich && SD.looksLikeMarkdown(text);
+      document.execCommand('insertHTML', false, md ? SD.sanitizeHtml(SD.markdownToHtml(text)) : html ? SD.sanitizeHtml(html) : SD.textToHtml(text) || SD.escapeHtml(text));
     });
     ed.addEventListener('keydown', (e) => {
       const mod = e.ctrlKey || e.metaKey;
+      if (e.key === 'Enter' && !mod && !e.shiftKey) {
+        // "---" then Enter makes a divider; "```" then Enter starts a code block
+        const blk = noteBlock(ed);
+        const t = blk ? blk.textContent.trim() : '';
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { e.preventDefault(); blk.textContent = ''; document.execCommand('insertHorizontalRule'); save(); return; }
+        if (t === '```') { e.preventDefault(); blk.textContent = ''; document.execCommand('formatBlock', false, '<pre>'); save(); return; }
+      }
       if (!mod) return;
       const k = e.key.toLowerCase();
       if (k === 'b' || k === 'i' || k === 'u') { e.preventDefault(); noteCmd({ b: 'bold', i: 'italic', u: 'underline' }[k]); }
     });
     root.append(h('div', { class: 'note-wrap' }, noteAboutBar(d), h('div', { class: 'note-page' }, ed)));
     setTimeout(() => ed.focus(), 0);
+  }
+
+  // the paragraph, heading or list item the cursor is in
+  function noteBlock(ed) {
+    const sel = getSelection();
+    let n = sel.anchorNode;
+    while (n && n !== ed && !(n.nodeType === 1 && /^(P|DIV|H[1-6]|LI|BLOCKQUOTE|PRE)$/.test(n.tagName))) n = n.parentNode;
+    return n && n !== ed ? n : null;
+  }
+
+  // Markdown shortcuts while typing: "# " "- " "1. " "> " at the start of a line, **bold** *italic* ~~strike~~ `code` [link](url)
+  function markdownShortcut(ed, typed) {
+    const sel = getSelection();
+    if (!sel.isCollapsed || !sel.anchorNode || sel.anchorNode.nodeType !== 3) return;
+    const node = sel.anchorNode, off = sel.anchorOffset;
+    const before = node.data.slice(0, off);
+    const select = (a, b) => { const r = document.createRange(); r.setStart(node, a); r.setEnd(node, b); sel.removeAllRanges(); sel.addRange(r); };
+    if (typed === ' ') {
+      const blk = noteBlock(ed);
+      const atStart = !blk || blk.textContent.replace(/\u00a0/g, ' ').trimStart().length === before.replace(/\u00a0/g, ' ').trimStart().length;
+      const m = before.replace(/\u00a0/g, ' ').match(/^\s*(#{1,3}|[-*+]|1[.)]|>|\[ ?\]|\[x\])\s$/i);
+      if (m && atStart && (!blk || blk.tagName !== 'LI' || m[1].startsWith('['))) {
+        // a moment later, outside the typing event, so the browser's formatting commands run
+        setTimeout(() => {
+          if (!node.isConnected || !node.data.startsWith(before)) return;
+          select(0, off);
+          document.execCommand('delete');
+          const mk = m[1].toLowerCase();
+          if (mk.startsWith('#')) document.execCommand('formatBlock', false, '<h' + mk.length + '>');
+          else if (mk === '>') document.execCommand('formatBlock', false, '<blockquote>');
+          else if (/^1/.test(mk)) document.execCommand('insertOrderedList');
+          else if (mk.startsWith('[')) document.execCommand('insertText', false, mk === '[x]' ? '☑ ' : '☐ ');
+          else document.execCommand('insertUnorderedList');
+          ed.dispatchEvent(new Event('input'));
+        }, 0);
+        return;
+      }
+    }
+    const rules = [
+      [/\*\*([^*\s][^*]*?)\*\*$/, 'b'], [/(?<![\w_])__([^_\s][^_]*?)__$/, 'b'],
+      [/(?<![*\w])\*([^*\s][^*]*?)\*$/, 'i'], [/(?<![\w_])_([^_\s][^_]*?)_$/, 'i'],
+      [/~~([^~]+?)~~$/, 's'], [/`([^`]+)`$/, 'code'],
+      [/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^)\s]+)\)$/, 'a'],
+    ];
+    for (const [re, tag] of rules) {
+      const m = before.match(re);
+      if (!m) continue;
+      // swap the marked-up text for the formatted element, and keep typing in plain text after it
+      const after = node.splitText(off);
+      const mid = node.splitText(off - m[0].length);
+      const el = document.createElement(tag);
+      el.textContent = m[1];
+      if (tag === 'a') el.setAttribute('href', m[2]);
+      mid.replaceWith(el);
+      // an invisible character after the element stops the browser from typing on inside it
+      const ZW = String.fromCharCode(0x200b);
+      if (!after.data.startsWith(ZW)) after.insertData(0, ZW);
+      sel.collapse(after, 1);
+      return;
+    }
+  }
+
+  function exportNoteMd(d) {
+    download(safeName(d.name) + '.md', SD.htmlToMarkdown(d.html || SD.textToHtml(d.text)), 'text/markdown;charset=utf-8');
   }
 
   // Which characters, locations… a note is about; their catalog pages list the note.
@@ -2140,7 +2249,7 @@
 
   function noteCmd(cmd, arg) {
     const ed = $('.note-rich');
-    if (!ed) return;
+    if (!ed) { if (state.noteMd) toast('Formatting buttons work in the formatted view; in Markdown, type **bold**, *italic*, # heading…'); return; }
     if (!ed.contains(document.getSelection().anchorNode)) ed.focus();
     document.execCommand(cmd, false, arg);
     ed.dispatchEvent(new Event('input'));
@@ -2166,6 +2275,8 @@
         b('―', 'Divider line', () => noteCmd('insertHorizontalRule')),
         b('✕ Format', 'Remove formatting from the selection', () => { noteCmd('removeFormat'); noteCmd('formatBlock', '<p>'); })),
       h('div', { class: 'tb-group' },
+        h('button', { class: 'btn ghost small' + (state.noteMd ? ' on' : ''), title: state.noteMd ? 'Back to the formatted note' : 'Edit the note as Markdown', onclick: () => { state.noteMd = !state.noteMd; renderView(); } }, state.noteMd ? '¶ Formatted' : 'M↓ Markdown'),
+        h('button', { class: 'btn ghost small', title: 'Download as a Markdown file (.md)', onclick: () => exportNoteMd(d) }, '.md'),
         h('button', { class: 'btn ghost small', title: 'Print or save as PDF', onclick: () => printNote(d) }, 'Print')),
     ];
   }
@@ -2350,6 +2461,7 @@
       const id = 'f-' + c.id + '-' + f.key;
       let control;
       if (f.type === 'link') control = linkControl(c, f, cb);
+      else if (f.type === 'scenes') control = sceneLinksControl(c, f, changed);
       else if (f.type === 'select') {
         control = h('select', { class: 'select', id, onchange: (e) => { if (e.target.value) c.fields[f.key] = e.target.value; else delete c.fields[f.key]; changed(); cb.onRename(); } },
           h('option', { value: '' }, '—'), f.options.map((o) => h('option', { value: o, selected: c.fields[f.key] === o }, o)));
@@ -2362,16 +2474,19 @@
       const extra = [];
       if (f.map) extra.push(h('a', { class: 'small-link', href: '#', onclick: (e) => { e.preventDefault(); const a = (c.fields[f.key] || c.name).trim(); if (a) window.open('https://www.openstreetmap.org/search?query=' + encodeURIComponent(a), '_blank', 'noopener'); } }, 'Open in map ↗'));
       if (f.type === 'url' && c.fields[f.key]) extra.push(h('a', { class: 'small-link', href: /^https?:/i.test(c.fields[f.key]) ? c.fields[f.key] : 'https://' + c.fields[f.key], target: '_blank', rel: 'noopener' }, 'Open link ↗'));
+      // written down, but never on screen?
+      if (f.shown && String(c.fields[f.key] || '').trim() && !SD.sceneRefs(c.fields[f.shown]).length) extra.push(h('div', { class: 'shown-hint', dataset: { for: f.shown } }, f.key === 'secret' ? '◌ Never revealed yet. If that is the point, fine — otherwise link the scene where it comes out.' : '◌ Not on screen yet — link the scene where we see it, just below.'));
       return h('div', { class: 'ffield' + (f.wide || f.type === 'link' && f.multi ? ' wide' : '') },
         h('label', { class: 'lbl', for: id }, f.label), control,
         f.help ? h('div', { class: 'help-text' }, f.help) : null, extra);
     };
 
-    const filled = (sec) => sec.fields.filter((f) => (f.type === 'link' ? SD.linkIds(c, f.key).length : (c.fields[f.key] || '').trim())).length;
+    const filled = (sec) => sec.fields.filter((f) => (f.type === 'link' ? SD.linkIds(c, f.key).length : Array.isArray(c.fields[f.key]) ? c.fields[f.key].length : String(c.fields[f.key] || '').trim())).length;
     const sections = SD.formFor(c.category).map((sec, i) => {
       const n = filled(sec);
       const det = h('details', { class: 'fsection', open: i === 0 || n > 0 || state.openSections?.has(c.category + sec.title) },
         h('summary', {}, sec.title, n ? h('span', { class: 'fcount' }, n + '/' + sec.fields.length) : null),
+        sec.check && sec.check(c) ? h('p', { class: 'sec-check' }, '↗ ' + sec.check(c)) : null,
         h('div', { class: 'fgrid' }, sec.fields.map(fieldNode)));
       det.addEventListener('toggle', () => {
         state.openSections = state.openSections || new Set();
@@ -2507,6 +2622,7 @@
       sections,
       appears,
       everywhereSection(c),
+      discoverSection(c),
       media,
       custom);
   }
@@ -2558,10 +2674,15 @@
         if (f.type === 'link') {
           const names = SD.linkIds(c, f.key).map(catalogById).filter(Boolean).map((x) => x.name);
           if (names.length) rows.push([f.label, names.join(', ')]);
-        } else if ((c.fields[f.key] || '').trim()) rows.push([f.label, c.fields[f.key]]);
+        } else if (f.type === 'scenes') {
+          const scs = SD.sceneRefs(c.fields[f.key]).map((id) => SD.findScene(state.project, id)).filter(Boolean);
+          if (scs.length) rows.push([f.label, scs.map((x) => 'Scene ' + x.scene.number).join(', ')]);
+        } else if (String(c.fields[f.key] || '').trim()) rows.push([f.label, c.fields[f.key]]);
       }
       if (rows.length) out.push([sec.title, rows]);
     }
+    const asked = (c.interview || []).filter((x) => (x.a || '').trim()).map((x) => [x.q, x.a]);
+    if (asked.length) out.push(['Interview', asked]);
     const custom = c.custom.filter((x) => (x.value || '').trim()).map((x) => [x.label || 'Note', x.value]);
     if (custom.length) out.push(['More', custom]);
     return out;
@@ -2674,6 +2795,7 @@
   function renderStatus() {
     const bar = $('#status-left');
     const d = currentDoc();
+    if (isSubmit()) { bar.textContent = 'Submission package  ·  saved with the project'; return; }
     if (isHome()) { bar.textContent = `${state.project.documents.length} documents  ·  ${state.project.catalog.length} catalog items  ·  Ctrl+Shift+F searches everything`; return; }
     if (!d || isCatalog()) { bar.textContent = isCatalog() ? `${state.project.catalog.length} catalog items` : ''; return; }
     if (d.kind === 'note') { bar.textContent = `Notes · ${((d.text || '').match(/\S+/g) || []).length.toLocaleString()} words`; return; }
@@ -2694,9 +2816,15 @@
     if (state.view === 'script') {
       const cur = editor.curBlock;
       if (cur) parts.push(SD.labelFor(d.scriptType, cur.dataset.type));
-      const line = est.lineAt[Math.min(state.caretIndex, est.lineAt.length - 1)] || 0;
-      parts.push(`Page ${SD.pageOfLine(line)} of ~${est.pages}`);
-    } else parts.push(`~${est.pages} pages`);
+      const pg = SD.paginate(d, { size: pageSize() });
+      let pno = 1;
+      for (let i = Math.min(state.caretIndex, d.elements.length - 1); i >= 0; i--) { const v = pg.pageOf.get(d.elements[i].id); if (v) { pno = v; break; } }
+      parts.push(`Page ${pno} of ${pg.count}`);
+      const rev = SD.currentRevision(d);
+      if (rev) parts.push(rev.name + ' revision');
+      else if (SD.production(d).locked) parts.push('scene numbers locked');
+    } else parts.push(`${SD.paginate(d, { size: pageSize() }).count} pages`);
+    void est;
     parts.push(`${scenes} ${d.scriptType === 'comic' ? 'pages' : 'scenes'}`, `${SD.wordCount(d).toLocaleString()} words`);
     bar.textContent = parts.join('  ·  ');
   }
@@ -2802,6 +2930,11 @@
         toast('Reading Celtx project…');
         const res = await SD.Celtx.import(file);
         await importDocs(res.documents, res.title, res.catalog);
+      } else if (['.md', '.markdown', '.mdown'].includes(ext)) {
+        const note = SD.newNote(base);
+        note.html = SD.sanitizeHtml(SD.markdownToHtml(await file.text()));
+        note.text = SD.htmlToPlain(note.html);
+        await importDocs([note], base);
       } else if (['.fountain', '.spmd', '.txt'].includes(ext)) {
         const parsed = SD.Fountain.parse(await file.text());
         const d = SD.newScript(parsed.elements.some((e) => e.type === 'act') ? 'teleplay' : 'screenplay', base);
@@ -2901,25 +3034,17 @@
     if (cur && cur.kind === 'note') { printNote(cur); return; }
     const d = scriptForExport();
     if (!d) return;
+    const L = SD.scriptLayout(d, { size: pageSize(), sceneNumbers: !!state.project.settings.sceneNumbers, revisionMarks: SD.production(d).marks || 'current' });
     const root = $('#print-root');
-    root.className = 'print-script';
-    root.replaceChildren();
-    const tp = d.titlePage;
-    if (tp.enabled !== false && (tp.title || tp.author)) root.append(titlePageNode(tp));
-    const body = h('div', { class: scriptTextClasses() });
-    body.dataset.scriptType = d.scriptType;
-    const elNode = (e) => {
-      const div = h('div', { class: 'el' + (e.text ? '' : ' is-empty') + (e.type === 'act' && !/^\s*END OF/i.test(e.text) ? ' act-start' : '') });
-      if (e.text) SD.fillFormatted(div, e.text, e.fmt); else div.textContent = ' ';
-      div.dataset.type = e.type;
-      return div;
-    };
-    for (const g of SD.dualGroups(d.elements)) {
-      if (g.pair) body.append(h('div', { class: 'dual-pair' }, g.pair.map((col) => h('div', { class: 'dual-col' }, col.map(elNode)))));
-      else body.append(elNode(g));
-    }
-    root.append(body);
-    document.title = safeName(tp.title || d.name);
+    root.className = 'print-pages';
+    root.removeAttribute('style');
+    root.replaceChildren(...SD.layoutToHTML(L));
+    const pageStyle = $('#page-size-style');
+    const before = pageStyle.textContent;
+    pageStyle.textContent = `@page { size: ${L.size === 'a4' ? 'A4' : 'letter'}; margin: 0; }`;
+    const docTitle = document.title;
+    document.title = safeName(d.titlePage.title || d.name);
+    window.addEventListener('afterprint', () => { pageStyle.textContent = before; document.title = docTitle; }, { once: true });
     window.print();
   }
 
@@ -3008,6 +3133,8 @@
           row('Ctrl+O', 'Open a project or import a script'),
           row('Ctrl+F', 'Find in the script (Ctrl+H: find & replace)'),
           row('Ctrl+Alt+M', 'Comment on the selected words'),
+          row('Ctrl+K', 'Every command, view, scene and document'),
+          row('Ctrl+Shift+Enter', 'Focus mode (Esc leaves)'),
           row('Ctrl+D', 'Dual dialogue for the speech the cursor is in'),
           row('Ctrl+Shift+F', 'Search the whole project'),
           row('Ctrl+click', 'On a character name or scene heading: open its catalog page'),
@@ -3068,6 +3195,15 @@
     const menu = h('div', { class: 'dropdown-menu floating open', role: 'menu' }, items.filter(Boolean).map((it) => it === '-'
       ? h('div', { class: 'menu-sep' })
       : h('button', { class: 'menu-item' + (it.danger ? ' danger' : ''), role: 'menuitem', onclick: () => { menu.remove(); it.run(); } }, it.label)));
+    // keyboard: arrows move, Enter picks, Esc closes
+    menu.addEventListener('keydown', (e) => {
+      const btns = [...menu.querySelectorAll('.menu-item')];
+      const i = btns.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); btns[(i + (e.key === 'ArrowDown' ? 1 : -1) + btns.length) % btns.length].focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); menu.remove(); if (anchor && anchor.focus) anchor.focus(); }
+      else if (e.key === 'Home') { e.preventDefault(); btns[0].focus(); }
+      else if (e.key === 'End') { e.preventDefault(); btns[btns.length - 1].focus(); }
+    });
     // Open after the current click has finished bubbling, so the global
     // "click outside closes menus" handler doesn't close it straight away.
     setTimeout(() => {
@@ -3077,6 +3213,8 @@
       menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
       menu.style.maxHeight = (window.innerHeight - 16) + 'px';
       menu.style.overflowY = 'auto';
+      const first = menu.querySelector('.menu-item');
+      if (first && (anchor === document.activeElement || anchor.contains(document.activeElement) || document.activeElement === document.body)) first.focus({ preventScroll: true });
     }, 0);
   }
 
@@ -3110,6 +3248,9 @@
       goals: openGoals,
       search: () => openSearch(),
       'review-copy': makeReviewCopy,
+      'export-pdf': () => exportPDF(),
+      submission: () => selectDoc('__submit'),
+      palette: () => openPalette(),
       'add-folder': () => addFolder(),
       example: (a) => openExample(a.dataset.file, a.dataset.name),
       install: () => installApp(),
@@ -3126,6 +3267,7 @@
       ...Object.fromEntries(Object.keys(SD.KINDS).map((k) => ['add-' + k, () => addDoc(k)])),
       'toggle-sidebar': () => document.body.classList.toggle('show-sidebar'),
     };
+    actionsRun = (k) => { const f = actions[k]; if (f) f(); };
     document.addEventListener('click', (e) => {
       const a = e.target.closest('[data-action]');
       if (a) {
@@ -3166,9 +3308,14 @@
 
     document.addEventListener('keydown', (e) => {
       const mod = e.ctrlKey || e.metaKey;
-      if (!mod) { if (e.key === 'Escape') closeMenus(); return; }
+      if (!mod) {
+        if (e.key === 'Escape') { closeMenus(); if (document.body.classList.contains('focus-mode') && !document.querySelector('.modal-backdrop')) toggleFocus(false); }
+        return;
+      }
       const k = e.key.toLowerCase();
       const inScript = currentDoc() && currentDoc().kind === 'script';
+      if (k === 'k' && !e.shiftKey && !e.altKey) { e.preventDefault(); openPalette(); return; }
+      if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); toggleFocus(); return; }
       if (k === 'f' && inScript && !e.shiftKey) { e.preventDefault(); openFind(false); return; }
       if (k === 'h' && inScript) { e.preventDefault(); openFind(true); return; }
       if (k === 'm' && e.altKey && inScript) { e.preventDefault(); addComment(); return; }
@@ -3875,6 +4022,8 @@
       h('div', { class: 'legend' }, h('span', {}, h('i', { class: 'key s1' }), 'Dialogue'), h('span', {}, h('i', { class: 'key s2' }), 'Action'))));
 
     wrap.append(...tensionAndTime(d, H));
+    wrap.append(valueChart(d, H));
+    wrap.append(whoWantsWhat(d));
 
     // 3. who speaks where (heatmap)
     const top = H.chars.slice(0, 12);
@@ -4359,7 +4508,8 @@
           const otherKey = keys.includes(l.a) ? l.b : l.a;
           const o = p.catalog.find((x) => x.id === otherKey);
           const kind = (SD.REL_KINDS.find((k) => k.id === l.kind) || {});
-          row(kind.icon || '🕸️', `${kind.label || 'Relationship'} with ${o ? o.name : otherKey.replace(/^name:/, '')}${l.label ? ' — ' + l.label : ''} (${d.name})`, open(d));
+          const wants = keys.includes(l.a) ? l.wantsAB : l.wantsBA;
+          row(kind.icon || '🕸️', `${kind.label || 'Relationship'} with ${o ? o.name : otherKey.replace(/^name:/, '')}${l.label ? ' — ' + l.label : ''}${wants ? ' · wants: ' + wants : ''} (${d.name})`, open(d));
         }
       }
       if (d.kind === 'moodboard' && (d.about || []).includes(c.id)) row('🎨', `Mood board “${d.name}” (${d.cards.length} cards)`, open(d));
@@ -4469,7 +4619,7 @@
     }
     for (const c of p.catalog) {
       const fields = Object.values(c.fields || {}).filter((v) => typeof v === 'string');
-      const t = [c.name, c.description, c.tags, ...fields, ...(c.custom || []).map((x) => x.value)].filter(Boolean).join(' · ');
+      const t = [c.name, c.description, c.tags, ...fields, ...(c.custom || []).map((x) => x.value), ...(c.interview || []).map((x) => x.a)].filter(Boolean).join(' · ');
       if (hit(t)) add('Catalog', '🗂️', SD.categoryById(c.category).one + ': ' + c.name, hit(c.name) ? c.description || '' : t, () => openCatalogItem(c.id));
     }
     return out;
@@ -4532,6 +4682,9 @@
       const scs = SD.getScenes(main);
       const noSyn = scs.filter((s) => !s.el.synopsis).length;
       if (noSyn) need('📇', `${noSyn} scene${noSyn === 1 ? '' : 's'} in “${main.name}” without a synopsis`, () => { state.docId = main.id; state.view = 'cards'; renderDocList(); renderView(); });
+      for (const g of storyGaps(main).slice(0, 6)) need(g.icon, g.text, g.go);
+      const flatScenes = scs.filter((s) => nothingChanges(s.el)).length;
+      if (flatScenes) need('↔', `${flatScenes} scene${flatScenes === 1 ? '' : 's'} where nothing changes`, () => { state.docId = main.id; state.view = 'outline'; renderDocList(); renderView(); });
       const noTemp = scs.filter((s) => s.el.temp == null).length;
       if (noTemp && noTemp < scs.length) need('🌡', `${noTemp} scene${noTemp === 1 ? '' : 's'} without a temperature`, () => selectDoc(main.id));
     }
@@ -4572,7 +4725,7 @@
         h('div', { class: 'home-title' },
           h('h1', {}, p.title || 'Untitled project'),
           h('textarea', { class: 'home-logline', rows: 2, value: p.logline || '', placeholder: 'Your logline: who wants what, what stands in the way, and what is at stake — in one or two sentences.', oninput: (e) => { p.logline = e.target.value; markDirty(); } })),
-        searchIn),
+        h('div', { class: 'home-actions' }, searchIn, h('button', { class: 'btn', onclick: () => selectDoc('__submit') }, '📨 Submission package'))),
       h('div', { class: 'health-tiles' },
         tile(pages, 'Script pages (est.)', g.pages ? Math.min(100, Math.round((pages / g.pages) * 100)) + '% of ' + g.pages : null),
         tile(words.toLocaleString(), 'Words in scripts'),
@@ -4585,6 +4738,1018 @@
         sec('Cast', cast.length ? h('div', { class: 'home-list' }, cast.map((c) => { const it = SD.findCatalogItem(p, 'character', c.name); const actor = it && it.links && it.links.playedBy && p.catalog.find((x) => x.id === it.links.playedBy); return h('div', { class: 'home-cast' }, h('button', { class: 'linklike', onclick: () => openCatalogItem(it ? it.id : null, { category: 'character', name: c.name }) }, c.name), h('span', { class: 'muted small' }, `${c.speeches} speeches${actor ? ' · ' + actor.name : ''}`), h('button', { class: 'btn ghost small', title: 'Voice check', onclick: () => voiceCheck(c.name) }, '🗣')); })) : h('p', { class: 'muted small' }, 'Characters appear once your script has dialogue.')),
         sec('Tension', curve ? [curve, h('p', { class: 'muted small' }, `“${main.name}”: the temperature of each scene, start to end.`)] : h('p', { class: 'muted small' }, 'Give scenes a temperature in the scene panel to see the shape of the story here.')),
         sec('Documents', h('div', { class: 'home-list' }, p.documents.map((d) => h('button', { class: 'home-doc', onclick: () => selectDoc(d.id) }, h('span', {}, icon(d)), h('span', { class: 'home-doc-name' }, d.name), h('span', { class: 'muted small' }, d.kind === 'script' ? SD.SCRIPT_TYPES[d.scriptType].label : (SD.KINDS[d.kind] || {}).label || (d.kind === 'note' ? 'Notes' : d.kind === 'storyline' ? 'Storyline' : 'Storyboard')))))))));
+  }
+
+  // =====================================================================
+  // page view: where every page starts, revision asterisks, locked scene numbers
+  // =====================================================================
+  const pv = { layer: null };
+  const pageSize = () => (state.project.settings.pageSize === 'a4' ? 'a4' : 'letter');
+  function updatePageView() {
+    const d = editor.doc;
+    const page = $('.editor-page');
+    if (!page) return;
+    if (!pv.layer || !page.contains(pv.layer)) { pv.layer = h('div', { class: 'pv-layer', 'aria-hidden': 'true' }); page.append(pv.layer); }
+    const s = state.project.settings;
+    if (!d || $('#editor-wrap').hidden) { pv.layer.replaceChildren(); return; }
+    const pr = SD.production(d);
+    editor.root.classList.toggle('locked', !!pr.locked);
+    // scene numbers for locked scripts (12, 12A…)
+    if (pr.locked || s.sceneNumbers) {
+      const nums = SD.sceneNumbers(d);
+      for (const b of editor.root.querySelectorAll('.el[data-type="scene"]')) { const n = nums.get(b.dataset.id); if (n) b.dataset.sceneno = n; else delete b.dataset.sceneno; }
+    }
+    const items = [];
+    const top = (b) => { let y = 0, n = b; while (n && n !== page) { y += n.offsetTop; n = n.offsetParent; } return y; };
+    if (s.pageView !== false) {
+      const pg = SD.paginate(d, { size: pageSize() });
+      let pno = 1;
+      for (const br of pg.breaks) {
+        pno++;
+        const b = blockById(br.elId);
+        if (!b) continue;
+        const gap = br.frac ? 0 : parseFloat(getComputedStyle(b).marginTop) / 2;
+        const y = top(b) + br.frac * b.offsetHeight - gap;
+        items.push(h('div', { class: 'pv-break', style: `top:${y}px` }, h('span', { class: 'pv-no' }, pno + '.'), br.frac ? h('span', { class: 'pv-note' }, 'page ' + pno + ' starts inside this') : null));
+      }
+    }
+    const rev = SD.currentRevision(d);
+    const marks = pr.marks || 'current';
+    if (marks !== 'none') {
+      for (const e of d.elements) {
+        if (!e.rev || (marks === 'current' && (!rev || e.rev !== rev.id))) continue;
+        const b = blockById(e.id);
+        if (b) items.push(h('div', { class: 'pv-rev', style: `top:${top(b)}px;--rc:${(pr.revisions.find((r) => r.id === e.rev) || {}).color || '#888'}`, title: 'Changed in the ' + ((pr.revisions.find((r) => r.id === e.rev) || {}).name || '') + ' revision' }, '*'));
+      }
+    }
+    pv.layer.replaceChildren(...items);
+  }
+  const updatePageViewSoon = debounce(updatePageView, 250);
+  window.addEventListener('resize', updatePageViewSoon);
+
+  // =====================================================================
+  // production: lock scene numbers, revisions in colours
+  // =====================================================================
+  function productionMenu(anchor, d) {
+    const pr = SD.production(d);
+    const rev = SD.currentRevision(d);
+    const touched = () => { editor.refreshState(); markDirty(); renderToolbar(); renderStatus(); updatePageView(); renderNavigator(); };
+    popupMenu(anchor, [
+      pr.locked
+        ? { label: '🔓 Unlock scene numbers…', run: async () => { const ok = await modal({ title: 'Unlock the scene numbers?', body: 'Scenes will be numbered 1, 2, 3… again, and OMITTED scenes disappear. Only do this before the script goes to production.', buttons: [{ label: 'Cancel', value: false }, { label: 'Unlock', value: true, primary: true }] }); if (!ok) return; pr.locked = false; pr.numbers = {}; pr.order = []; touched(); } }
+        : { label: '🔒 Lock scene numbers', run: () => { syncEditor(); const nums = SD.sceneNumbers(Object.assign({}, d, { production: {} })); pr.locked = true; pr.lockedAt = new Date().toISOString(); pr.numbers = Object.fromEntries(nums); pr.order = [...nums.keys()]; state.project.settings.sceneNumbers = true; applyProjectSettings(); touched(); toast('Scene numbers are locked. New scenes get numbers like 12A; deleted scenes print as OMITTED.'); } },
+      '-',
+      { label: rev ? `● ${rev.name} revision is on — start the next…` : '🖍 Start a revision…', run: () => startRevision(d) },
+      rev ? { label: '○ Stop marking changes', run: () => { pr.current = null; touched(); toast('Changes are no longer marked. The marks stay.'); } } : null,
+      { label: `Show marks: ${({ current: 'this revision', all: 'all revisions', none: 'none' })[pr.marks || 'current']} (change)`, run: () => { pr.marks = { current: 'all', all: 'none', none: 'current' }[pr.marks || 'current']; touched(); } },
+      pr.revisions.length ? { label: 'Clear all revision marks…', danger: true, run: async () => { if (!(await modal({ title: 'Clear every revision mark?', body: 'The asterisks go away; the text stays as it is.', buttons: [{ label: 'Cancel', value: false }, { label: 'Clear', value: true, primary: true, danger: true }] }))) return; d.elements.forEach((e) => delete e.rev); touched(); } } : null,
+      '-',
+      { label: '📄 PDF of the revised pages only…', run: () => exportPDF({ onlyRevised: true }) },
+    ]);
+  }
+
+  async function startRevision(d) {
+    const pr = SD.production(d);
+    const next = SD.REVISION_COLORS[pr.revisions.length % SD.REVISION_COLORS.length];
+    const name = h('select', { class: 'select' }, SD.REVISION_COLORS.map(([n]) => h('option', { value: n, selected: n === next[0] }, n + ' revision')));
+    const date = h('input', { class: 'input', value: new Date().toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' }) });
+    const ok = await modal({
+      title: 'Start a revision',
+      body: h('div', {}, h('p', { class: 'muted small' }, 'Every line you change from now on gets an asterisk in the margin, and the pages it is on carry the revision name and date at the top — the way production revisions are sent out. Locking the scene numbers first is usual.'),
+        h('label', { class: 'lbl' }, 'Colour'), name, h('label', { class: 'lbl' }, 'Date in the page header'), date,
+        !pr.locked ? h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: true, id: 'rev-lock' }), ' Lock the scene numbers too') : null),
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Start revision', value: true, primary: true }],
+    });
+    if (!ok) return;
+    const lockBox = document.getElementById('rev-lock');
+    syncEditor();
+    if (!pr.locked && (!lockBox || lockBox.checked)) {
+      const nums = SD.sceneNumbers(Object.assign({}, d, { production: {} }));
+      pr.locked = true; pr.numbers = Object.fromEntries(nums); pr.order = [...nums.keys()];
+      state.project.settings.sceneNumbers = true; applyProjectSettings();
+    }
+    const color = (SD.REVISION_COLORS.find(([n]) => n === name.value) || next)[1];
+    const r = { id: SD.uid(), name: name.value, color, date: date.value, started: new Date().toISOString() };
+    pr.revisions.push(r);
+    pr.current = r.id;
+    editor.refreshState();
+    markDirty();
+    renderToolbar(); renderStatus(); updatePageView();
+    toast(`${r.name} revision started. Changed lines are marked with *.`);
+  }
+
+  // =====================================================================
+  // PDF and printing from the page engine
+  // =====================================================================
+  async function exportPDF(preset = {}) {
+    syncEditor();
+    const d = scriptForExport();
+    if (!d) return;
+    const pr = SD.production(d);
+    const s = state.project.settings;
+    const cTitle = h('input', { type: 'checkbox', checked: d.titlePage.enabled !== false && !preset.onlyRevised });
+    const cNums = h('input', { type: 'checkbox', checked: !!(s.sceneNumbers || pr.locked) });
+    const marks = h('select', { class: 'select' }, [['current', 'Asterisks for this revision'], ['all', 'Asterisks for every revision'], ['none', 'No revision marks']].map(([v, l]) => h('option', { value: v, selected: v === (pr.marks || 'current') }, l)));
+    const only = h('input', { type: 'checkbox', checked: !!preset.onlyRevised });
+    const size = h('select', { class: 'select' }, h('option', { value: 'letter', selected: pageSize() === 'letter' }, 'US Letter'), h('option', { value: 'a4', selected: pageSize() === 'a4' }, 'A4'));
+    const layoutNow = () => SD.scriptLayout(d, { size: size.value, sceneNumbers: cNums.checked, revisionMarks: marks.value, titlePage: cTitle.checked, onlyRevised: only.checked });
+    const info = h('p', { class: 'muted small' });
+    const upd = () => { const L = layoutNow(); info.textContent = `${L.count} pages of script` + (only.checked ? ` · ${L.pages.length} revised page${L.pages.length === 1 ? '' : 's'} in the file` : ''); };
+    [cTitle, cNums, marks, only, size].forEach((x) => x.addEventListener('change', upd));
+    upd();
+    const ok = await modal({
+      title: 'Download PDF',
+      body: h('div', {}, h('p', {}, 'Exact pages in 12pt Courier: the same in every browser and on every computer. (MORE) and (CONT’D) are added where speeches cross a page.'),
+        h('label', { class: 'lbl' }, 'Paper'), size,
+        h('label', { class: 'check' }, cTitle, ' Title page'),
+        h('label', { class: 'check' }, cNums, ' Scene numbers in both margins'),
+        pr.revisions.length ? [h('label', { class: 'lbl' }, 'Revisions'), marks, h('label', { class: 'check' }, only, ' Only the pages that changed in this revision')] : null,
+        info),
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Download PDF', value: true, primary: true }],
+    });
+    if (!ok) return;
+    const L = layoutNow();
+    if (!L.pages.length) { toast('No pages changed in this revision.'); return; }
+    const rev = SD.currentRevision(d);
+    const name = safeName((d.titlePage.title || d.name) + (only.checked && rev ? ' - ' + rev.name + ' revision pages' : ''));
+    download(name + '.pdf', SD.layoutToPDF(L, { title: d.titlePage.title || d.name, author: d.titlePage.author }));
+  }
+
+  // =====================================================================
+  // focus mode: only the page, the current line in the middle
+  // =====================================================================
+  function toggleFocus(on) {
+    const want = on == null ? !document.body.classList.contains('focus-mode') : on;
+    const d = currentDoc();
+    if (want && (!d || d.kind !== 'script')) { toast('Open a script to write in focus mode.'); return; }
+    if (want && state.view !== 'script') setView('script');
+    document.body.classList.toggle('focus-mode', want);
+    document.body.classList.toggle('focus-dark', want && !!state.project.settings.focusDark);
+    if (want) {
+      if (!$('#focus-bar')) document.body.append(h('div', { id: 'focus-bar', class: 'focus-bar' },
+        h('span', { class: 'focus-count' }),
+        h('button', { class: 'btn ghost small', title: 'Dark page', onclick: () => { state.project.settings.focusDark = !state.project.settings.focusDark; document.body.classList.toggle('focus-dark', state.project.settings.focusDark); markDirty(); } }, '◐'),
+        h('button', { class: 'btn ghost small', title: 'Leave focus mode (Esc)', onclick: () => toggleFocus(false) }, '✕ Leave focus')));
+      updateFocusCount();
+      editor.focusEditor();
+      typewriter();
+    } else { const b = $('#focus-bar'); if (b) b.remove(); }
+  }
+  function updateFocusCount() {
+    const el = $('#focus-bar .focus-count');
+    const d = currentDoc();
+    if (!el || !d || d.kind !== 'script') return;
+    const e = state.project.writingLog && state.project.writingLog[today()];
+    el.textContent = `${SD.wordCount(d).toLocaleString()} words` + (e && e.words ? ` · +${e.words} today` : '');
+  }
+  // keep the line you are on at the same height on screen
+  function typewriter() {
+    if (!document.body.classList.contains('focus-mode') || !editor.curBlock) return;
+    const host = $('#editor-wrap');
+    const r = editor.curBlock.getBoundingClientRect(), hr = host.getBoundingClientRect();
+    const want = hr.top + hr.height * 0.42;
+    const delta = r.top - want;
+    if (Math.abs(delta) > 4) host.scrollTop += delta;
+  }
+
+  // =====================================================================
+  // keyboard first: Ctrl+K command palette
+  // =====================================================================
+  function paletteCommands() {
+    const d = currentDoc();
+    const inScript = d && d.kind === 'script';
+    const cmds = [];
+    const c = (group, label, run, keys) => cmds.push({ group, label, run, keys: keys || '' });
+    c('File', 'New blank project', () => actionsRun('new'));
+    c('File', 'Open a file…', () => actionsRun('open'), 'Ctrl+O');
+    c('File', 'Save', () => actionsRun('save'), 'Ctrl+S');
+    c('File', 'Save as…', () => actionsRun('saveas'), 'Ctrl+Shift+S');
+    c('File', 'Download PDF (exact pages)…', () => exportPDF(), '');
+    c('File', 'Print / Save as PDF…', () => printScript(), 'Ctrl+P');
+    c('File', 'Export Fountain', () => actionsRun('export-fountain'));
+    c('File', 'Export Final Draft (.fdx)', () => actionsRun('export-fdx'));
+    c('File', 'Review copy for a reader…', () => actionsRun('review-copy'));
+    c('File', 'Submission package (script, one-sheet, synopsis, bios, query letter)', () => selectDoc('__submit'));
+    c('Go', 'Home', () => selectDoc('__home'));
+    c('Go', 'Master Catalog', () => selectDoc('__catalog'));
+    c('Go', 'Search everything…', () => openSearch(), 'Ctrl+Shift+F');
+    c('Tools', 'Writing goals & sprint timer', () => openGoals());
+    c('Tools', 'Settings', () => actionsRun('settings'));
+    c('Tools', 'Help & shortcuts', () => actionsRun('help'));
+    c('Tools', 'Voice check…', () => voiceCheck());
+    c('Add', 'New folder', () => addFolder());
+    for (const [k, l] of [['screenplay', 'Screenplay'], ['teleplay', 'TV Drama'], ['sitcom', 'Sitcom'], ['stageplay', 'Stage Play'], ['audioplay', 'Audio Play'], ['comic', 'Comic Book'], ['av', 'AV Script'], ['note', 'Notes'], ['storyline', 'Storyline'], ['storyboard', 'Storyboard'], ...Object.entries(SD.KINDS).map(([kk, K]) => [kk, K.label])]) c('Add', 'New ' + l, () => addDoc(k));
+    if (inScript) {
+      c('Script', 'Focus mode', () => toggleFocus(), 'Ctrl+Shift+Enter');
+      c('Script', (state.project.settings.pageView === false ? 'Show' : 'Hide') + ' page breaks (page view)', () => { state.project.settings.pageView = state.project.settings.pageView === false; markDirty(); updatePageView(); renderToolbar(); });
+      c('Script', 'Find & replace', () => openFind(true), 'Ctrl+H');
+      c('Script', 'Comment on the selection', () => addComment(), 'Ctrl+Alt+M');
+      c('Script', 'Dual dialogue on/off', () => toggleDual(), 'Ctrl+D');
+      c('Script', 'Table read', () => startTableRead());
+      c('Script', (spell.on ? 'Turn off' : 'Turn on') + ' spell check', () => toggleSpell());
+      c('Script', 'Rename a character everywhere…', () => renameCharacter());
+      c('Script', 'Lock scene numbers / revisions…', () => productionMenu($('#toolbar') || document.body, d));
+      c('Script', 'Start a revision…', () => startRevision(d));
+      for (const [v, l] of [['script', 'Script'], ['title', 'Title page'], ['outline', 'Outline'], ['cards', 'Index cards'], ['arcs', 'Character arcs'], ['reports', 'Reports']]) c('View', l, () => setView(v));
+      for (const t of SD.SCRIPT_TYPES[d.scriptType].elements) c('Element', 'Turn into ' + SD.labelFor(d.scriptType, t), () => { setView('script'); editor.setType(t); });
+      for (const s of SD.getScenes(d)) c('Scene', `${s.number}. ${(s.el.text || 'Untitled').toUpperCase()}`, () => goToScene(s.id));
+    }
+    for (const x of state.project.documents) c('Document', x.name, () => selectDoc(x.id));
+    for (const it of state.project.catalog) c('Catalog', SD.categoryById(it.category).one + ': ' + (it.name || 'Unnamed'), () => openCatalogItem(it.id));
+    return cmds;
+  }
+  let actionsRun = () => {};
+  const fuzzy = (q, text) => {
+    q = q.toLowerCase(); text = text.toLowerCase();
+    if (!q) return 1;
+    const i = text.indexOf(q);
+    if (i >= 0) return 1000 - i - text.length * 0.01;
+    let ti = 0, score = 0;
+    for (const ch of q) { const k = text.indexOf(ch, ti); if (k < 0) return 0; score += k === ti ? 3 : 1; ti = k + 1; }
+    return score;
+  };
+  async function openPalette() {
+    const all = paletteCommands();
+    const input = h('input', { class: 'input pal-in', placeholder: 'Type a command, a scene, a document, a character…' });
+    const list = h('div', { class: 'pal-list', role: 'listbox' });
+    let shown = [], sel = 0, closeIt = null;
+    const draw = () => {
+      const q = input.value.trim();
+      shown = all.map((x) => ({ x, s: Math.max(fuzzy(q, x.label), fuzzy(q, x.group + ' ' + x.label) * 0.8) })).filter((y) => y.s > 0).sort((a, b) => b.s - a.s).slice(0, 60).map((y) => y.x);
+      sel = Math.min(sel, Math.max(0, shown.length - 1));
+      list.replaceChildren(...(shown.length ? shown.map((x, i) => h('button', { class: 'pal-item' + (i === sel ? ' on' : ''), role: 'option', onclick: () => run(i) }, h('span', { class: 'pal-group' }, x.group), h('span', { class: 'pal-label' }, x.label), x.keys ? h('kbd', {}, x.keys) : null)) : [h('p', { class: 'muted small' }, q ? 'Nothing matches. Enter searches the whole project.' : '')]));
+    };
+    const run = (i) => {
+      const x = shown[i];
+      const q = input.value;
+      if (closeIt) closeIt();
+      setTimeout(() => (x ? x.run() : q.trim() && openSearch(q)), 20);
+    };
+    input.addEventListener('input', () => { sel = 0; draw(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(0, Math.min(shown.length - 1, sel + (e.key === 'ArrowDown' ? 1 : -1))); list.querySelectorAll('.pal-item').forEach((b, i) => b.classList.toggle('on', i === sel)); const on = list.querySelector('.pal-item.on'); if (on) on.scrollIntoView({ block: 'nearest' }); }
+      if (e.key === 'Enter') { e.preventDefault(); run(sel); }
+    });
+    draw();
+    const p = modal({ title: 'Commands', body: h('div', { class: 'pal' }, input, list, h('p', { class: 'muted small pal-help' }, '↑ ↓ to choose · Enter to run · Esc to close')), buttons: [] });
+    closeIt = () => { const bd = document.querySelector('.modal-backdrop:last-child'); if (bd) bd.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); };
+    setTimeout(() => input.focus(), 20);
+    await p;
+  }
+
+  // =====================================================================
+  // outline: acts and scenes, reorder by dragging, purpose of each scene
+  // =====================================================================
+  // The script as units: what comes before the first scene, act breaks, and scenes with their body.
+  function sceneUnits(d) {
+    const st = SD.SCRIPT_TYPES[d.scriptType].sceneType;
+    const units = [];
+    let cur = { kind: 'pre', id: '__pre', els: [] };
+    units.push(cur);
+    for (const e of d.elements) {
+      if (e.type === st) { cur = { kind: 'scene', id: e.id, els: [e] }; units.push(cur); }
+      else if (e.type === 'act') { cur = { kind: 'act', id: e.id, els: [e] }; units.push(cur); }
+      else cur.els.push(e);
+    }
+    return units;
+  }
+  function moveUnit(d, fromId, toId, after) {
+    syncEditor();
+    const units = sceneUnits(d);
+    const from = units.findIndex((u) => u.id === fromId);
+    if (from < 1 || fromId === toId) return false;
+    const [u] = units.splice(from, 1);
+    let to = units.findIndex((x) => x.id === toId);
+    if (to < 0) return false;
+    if (after) to++;
+    units.splice(Math.max(1, to), 0, u);
+    d.elements = units.flatMap((x) => x.els);
+    state.editorStale = true;
+    markDirty();
+    return true;
+  }
+
+  const POLARITY = [['+', '＋ better'], ['-', '－ worse'], ['±', '± mixed'], ['', 'no change']];
+  const purposeOf = (e) => (e.purpose = e.purpose && typeof e.purpose === 'object' ? e.purpose : {});
+  const hasPurpose = (e) => e.purpose && Object.values(e.purpose).some((v) => v);
+  const nothingChanges = (e) => hasPurpose(e) && !e.purpose.polarity && !(e.purpose.from && e.purpose.to && e.purpose.from.trim().toLowerCase() !== e.purpose.to.trim().toLowerCase());
+
+  function purposeCard(d, sc, onchange) {
+    const e = sc.el;
+    const p = purposeOf(e);
+    const chars = SD.sceneCharacters(d, sc);
+    const set = (k, v) => { if (v) p[k] = v; else delete p[k]; editor.refreshState(); markDirty(); if (onchange) onchange(); };
+    const field = (k, label, ph) => h('label', { class: 'pc-field' }, h('span', { class: 'lbl' }, label), h('textarea', { class: 'input', rows: 2, value: p[k] || '', placeholder: ph, oninput: (ev) => set(k, ev.target.value) }));
+    return h('div', { class: 'purpose-card' },
+      h('div', { class: 'pc-row' },
+        h('label', { class: 'pc-field' }, h('span', { class: 'lbl' }, 'Whose scene?'), h('select', { class: 'select', onchange: (ev) => set('pov', ev.target.value) }, h('option', { value: '' }, '—'), [...new Set([...chars, p.pov].filter(Boolean))].map((n) => h('option', { value: n, selected: n === p.pov }, n)))),
+        h('div', { class: 'pc-field' }, h('span', { class: 'lbl' }, 'Things get…'), h('div', { class: 'seg' }, POLARITY.map(([v, l]) => h('button', { class: 'btn small' + ((p.polarity || '') === v ? ' primary' : ''), onclick: (ev) => { set('polarity', v); ev.currentTarget.parentElement.querySelectorAll('.btn').forEach((b) => b.classList.remove('primary')); ev.currentTarget.classList.add('primary'); } }, l))))),
+      field('want', 'What do they want here?', 'e.g. get Noor off the boat'),
+      field('obstacle', 'What is in the way?', 'e.g. the fog, the engine, her own pride'),
+      field('turn', 'What happens that changes things?', 'e.g. she lets Noor steer'),
+      h('div', { class: 'pc-row' }, field('from', 'At the start it is…', 'e.g. strangers'), field('to', '…and at the end', 'e.g. allies')),
+      nothingChanges(e) ? h('p', { class: 'warn small' }, 'Nothing changes in this scene yet. Every scene should turn something — if nothing turns, ask whether the scene is needed.') : null);
+  }
+
+  function renderOutline(root, d) {
+    const units = sceneUnits(d);
+    const scenes = SD.getScenes(d);
+    const byId = new Map(scenes.map((s) => [s.id, s]));
+    state.olOpen = state.olOpen || new Set();
+    state.olClosedActs = state.olClosedActs || new Set();
+    const redraw = () => { const sc = root.scrollTop; renderView(); const ov = $('#other-view'); if (ov) ov.scrollTop = sc; };
+    let actOpen = true;
+    const rows = [];
+    for (const u of units) {
+      if (u.kind === 'pre') continue;
+      if (u.kind === 'act') {
+        const closed = state.olClosedActs.has(u.id);
+        actOpen = !closed;
+        if (/^\s*END OF/i.test(u.els[0].text || '')) { rows.push(h('div', { class: 'ol-actend', draggable: 'true', dataset: { unit: u.id } }, (u.els[0].text || '').toUpperCase())); actOpen = true; continue; }
+        rows.push(h('div', { class: 'ol-act', draggable: 'true', dataset: { unit: u.id } },
+          h('button', { class: 'icon-btn', 'aria-label': closed ? 'Open act' : 'Close act', onclick: () => { if (closed) state.olClosedActs.delete(u.id); else state.olClosedActs.add(u.id); redraw(); } }, closed ? '▸' : '▾'),
+          h('strong', {}, (u.els[0].text || 'ACT').toUpperCase())));
+        continue;
+      }
+      if (!actOpen) continue;
+      const s = byId.get(u.id);
+      if (!s) continue;
+      const open = state.olOpen.has(s.id);
+      const p = s.el.purpose || {};
+      const summary = [p.want ? 'wants ' + p.want : '', p.turn ? '→ ' + p.turn : '', p.from || p.to ? `(${p.from || '?'} → ${p.to || '?'})` : ''].filter(Boolean).join('  ');
+      rows.push(h('div', { class: 'ol-scene' + (open ? ' open' : '') + (nothingChanges(s.el) ? ' flat' : ''), draggable: 'true', dataset: { unit: s.id }, style: s.el.color ? `--c:${s.el.color}` : '' },
+        h('div', { class: 'ol-head' },
+          h('span', { class: 'ol-grip', title: 'Drag to move the scene' }, '⋮⋮'),
+          h('span', { class: 'ol-num' }, s.number),
+          h('button', { class: 'ol-title', title: 'Open in the script', onclick: () => goToScene(s.id) }, (s.el.text || 'Untitled scene').toUpperCase()),
+          p.polarity ? h('span', { class: 'ol-pol pol-' + (p.polarity === '+' ? 'up' : p.polarity === '-' ? 'down' : 'mix'), title: 'Things get ' + (p.polarity === '+' ? 'better' : p.polarity === '-' ? 'worse' : 'mixed') }, p.polarity === '-' ? '−' : p.polarity) : null,
+          s.el.temp != null ? h('span', { class: 'card-temp', style: `--t:${s.el.temp}` }, '🌡 ' + s.el.temp) : null,
+          h('span', { class: 'ol-len muted small' }, SD.eighths(s.lines) + ' pg · p. ' + s.page),
+          h('button', { class: 'btn ghost small', onclick: () => { if (open) state.olOpen.delete(s.id); else state.olOpen.add(s.id); redraw(); } }, open ? 'Close' : 'Purpose')),
+        h('textarea', { class: 'ol-syn', rows: 1, value: s.el.synopsis || '', placeholder: 'Synopsis — what happens in this scene?', oninput: (e) => { s.el.synopsis = e.target.value; editor.refreshState(); markDirty(); } }),
+        !open && summary ? h('div', { class: 'ol-summary muted small' }, summary) : null,
+        open ? purposeCard(d, s, () => {}) : null));
+    }
+    const list = h('div', { class: 'ol-list' }, rows.length ? rows : h('p', { class: 'muted' }, 'No scenes yet.'));
+    // drag scenes and acts to reorder
+    let drag = null;
+    list.addEventListener('dragstart', (e) => { const r = e.target.closest && e.target.closest('[data-unit]'); if (!r || e.target.closest('textarea, input, select')) return; drag = r.dataset.unit; e.dataTransfer.setData('text/x-scriptdesk-unit', drag); e.dataTransfer.effectAllowed = 'move'; r.classList.add('dragging'); });
+    list.addEventListener('dragend', () => { drag = null; list.querySelectorAll('.dragging, .drop-before, .drop-after').forEach((x) => x.classList.remove('dragging', 'drop-before', 'drop-after')); });
+    const spot = (e) => { const r = e.target.closest('[data-unit]'); if (!r) return null; const b = r.getBoundingClientRect(); return { r, after: e.clientY > b.top + b.height / 2 }; };
+    list.addEventListener('dragover', (e) => { if (!drag) return; e.preventDefault(); list.querySelectorAll('.drop-before, .drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after')); const sp = spot(e); if (sp && sp.r.dataset.unit !== drag) sp.r.classList.add(sp.after ? 'drop-after' : 'drop-before'); });
+    list.addEventListener('drop', (e) => { if (!drag) return; e.preventDefault(); const sp = spot(e); const id = drag; drag = null; if (sp && moveUnit(d, id, sp.r.dataset.unit, sp.after)) redraw(); });
+    const flat = scenes.filter((s) => nothingChanges(s.el)).length;
+    const withP = scenes.filter((s) => hasPurpose(s.el)).length;
+    root.append(h('div', { class: 'view-pad outline' },
+      h('div', { class: 'view-head' }, h('h2', {}, 'Outline'),
+        h('div', { class: 'row-gap' },
+          h('button', { class: 'btn small', onclick: () => { scenes.forEach((s) => state.olOpen.add(s.id)); redraw(); } }, 'Open all purposes'),
+          h('button', { class: 'btn small', onclick: () => { state.olOpen.clear(); state.olClosedActs.clear(); redraw(); } }, 'Close all'))),
+      h('p', { class: 'muted small' }, `Drag scenes (and act breaks) to reorder the script. ${withP} of ${scenes.length} scenes have a purpose` + (flat ? ` · ${flat} where nothing changes yet` : '') + '.'),
+      list));
+  }
+
+  // drag scenes in the sidebar list to reorder them
+  function bindSceneDrag() {
+    const list = $('#scene-list');
+    if (list.dataset.dnd) return;
+    list.dataset.dnd = '1';
+    let drag = null;
+    list.addEventListener('dragstart', (e) => { const li = e.target.closest && e.target.closest('.scene-item[data-id]'); const d = currentDoc(); if (!li || !d || d.kind !== 'script') return; drag = li.dataset.id; e.dataTransfer.setData('text/x-scriptdesk-scene', drag); e.dataTransfer.effectAllowed = 'move'; });
+    list.addEventListener('dragend', () => { drag = null; list.querySelectorAll('.drop-before, .drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after')); });
+    list.addEventListener('dragover', (e) => { if (!drag) return; e.preventDefault(); list.querySelectorAll('.drop-before, .drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after')); const li = e.target.closest('.scene-item[data-id]'); if (li && li.dataset.id !== drag) { const b = li.getBoundingClientRect(); li.classList.add(e.clientY > b.top + b.height / 2 ? 'drop-after' : 'drop-before'); } });
+    list.addEventListener('drop', (e) => {
+      if (!drag) return;
+      e.preventDefault();
+      const li = e.target.closest('.scene-item[data-id]');
+      const d = currentDoc();
+      const id = drag; drag = null;
+      if (!li || !d) return;
+      const b = li.getBoundingClientRect();
+      if (moveUnit(d, id, li.dataset.id, e.clientY > b.top + b.height / 2)) { renderView(); toast('Scene moved.'); }
+    });
+  }
+
+  // =====================================================================
+  // character arcs: where each character stands, scene by scene
+  // =====================================================================
+  const ARC_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+  const allArcs = () => state.project.catalog.filter((c) => c.category === 'character' && Array.isArray(c.arcs)).flatMap((c) => c.arcs.map((a) => ({ c, a })));
+
+  async function addArc(d, presetName) {
+    const names = [...new Set([...characterStats(d).map((c) => c.name), ...state.project.catalog.filter((c) => c.category === 'character' && c.name.trim()).map((c) => c.name.trim().toUpperCase())])];
+    if (!names.length) { toast('Add characters first: write some dialogue or add them to the catalog.'); return; }
+    const who = h('select', { class: 'select' }, names.map((n) => h('option', { value: n, selected: n === presetName }, n)));
+    const label = h('input', { class: 'input', placeholder: 'What changes? e.g. Trust, Courage, Hope' });
+    const low = h('input', { class: 'input', placeholder: 'At 0, e.g. closed off' });
+    const high = h('input', { class: 'input', placeholder: 'At 10, e.g. open' });
+    const ok = await modal({
+      title: 'Track a character arc',
+      body: h('div', {}, h('p', { class: 'muted small' }, 'An arc is one thing that changes in a character over the story. Then give each scene a value from 0 to 10.'),
+        h('label', { class: 'lbl' }, 'Character'), who, h('label', { class: 'lbl' }, 'What changes'), label,
+        h('div', { class: 'sb-grid2' }, h('label', {}, h('span', { class: 'lbl' }, 'Low end'), low), h('label', {}, h('span', { class: 'lbl' }, 'High end'), high))),
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Add arc', value: true, primary: true }],
+    });
+    if (!ok) return;
+    let c = SD.findCatalogItem(state.project, 'character', who.value);
+    if (!c) { c = SD.newCatalogItem('character', who.value); state.project.catalog.push(c); renderDocList(); }
+    c.arcs = Array.isArray(c.arcs) ? c.arcs : [];
+    c.arcs.push({ id: SD.uid(), label: label.value.trim() || 'Arc', low: low.value.trim(), high: high.value.trim(), points: {} });
+    markDirty();
+    renderView();
+  }
+
+  function arcChart(scenes, arcs, withTension) {
+    const n = scenes.length, L = 36, bw = n <= 12 ? 48 : n <= 40 ? 24 : 14, W = L + n * bw + 20, CH = 180;
+    const x = (i) => L + i * bw + bw / 2, y = (v) => CH - (v / 10) * (CH - 16);
+    const svg = svgEl('svg', { viewBox: `0 0 ${W} ${CH + 22}`, width: W, height: CH + 22, class: 'hchart', role: 'img', 'aria-label': 'Character arcs across the script' });
+    [0, 5, 10].forEach((v) => svg.append(svgEl('line', { x1: L, x2: W - 20, y1: y(v), y2: y(v), class: 'hgrid' }), svgEl('text', { x: 2, y: y(v) + 3, class: 'haxis' }, String(v))));
+    scenes.forEach((s, i) => { if (n <= 40 || i % 5 === 0) svg.append(svgEl('text', { x: x(i), y: CH + 16, class: 'haxis mid' }, String(s.number))); });
+    if (withTension) {
+      const t = scenes.map((s, i) => [i, s.el.temp]).filter(([, v]) => v != null);
+      if (t.length > 1) svg.append(svgEl('polyline', { points: t.map(([i, v]) => `${x(i)},${y(v)}`).join(' '), class: 'hline tension' }));
+    }
+    arcs.forEach(({ c, a }, k) => {
+      const col = ARC_COLORS[k % ARC_COLORS.length];
+      const pts = scenes.map((s, i) => [i, a.points[s.id]]).filter(([, v]) => v != null && v !== '');
+      if (pts.length > 1) svg.append(svgEl('polyline', { points: pts.map(([i, v]) => `${x(i)},${y(v)}`).join(' '), fill: 'none', stroke: col, 'stroke-width': 2.5 }));
+      pts.forEach(([i, v]) => {
+        const g = svgEl('g', {}, svgEl('circle', { cx: x(i), cy: y(v), r: 5, fill: 'var(--paper)', stroke: col, 'stroke-width': 2.5 }), svgEl('rect', { x: x(i) - 8, y: y(v) - 8, width: 16, height: 16, class: 'hhit' }));
+        hoverable(g, `<b>${esc(c.name)} · ${esc(a.label)}</b><br>Scene ${scenes[i].number}: ${v}${a.low || a.high ? ` (0 ${esc(a.low || '')} — 10 ${esc(a.high || '')})` : ''}`);
+        svg.append(g);
+      });
+      if (pts.length) { const [i, v] = pts[pts.length - 1]; svg.append(svgEl('text', { x: Math.min(W - 4, x(i) + 8), y: y(v) + 4, class: 'arc-end', fill: col }, c.name)); }
+    });
+    return svg;
+  }
+
+  function renderArcs(root, d) {
+    const scenes = SD.getScenes(d);
+    const arcs = allArcs();
+    state.arcTension = state.arcTension == null ? true : state.arcTension;
+    const redraw = () => { const sc = root.scrollTop; renderView(); const ov = $('#other-view'); if (ov) ov.scrollTop = sc; };
+    const later = debounce(redraw, 500);
+    const present = (c, s) => SD.sceneCharacters(d, s).includes(c.name.trim().toUpperCase());
+    const head = h('tr', {}, h('th', { class: 'arc-name' }, 'Arc'), scenes.map((s) => h('th', { title: (s.el.text || '').toUpperCase() }, s.number)));
+    const rows = arcs.map(({ c, a }, k) => h('tr', {},
+      h('th', { class: 'arc-name' },
+        h('span', { class: 'arc-key', style: `background:${ARC_COLORS[k % ARC_COLORS.length]}` }),
+        h('button', { class: 'linklike', onclick: () => openCatalogItem(c.id) }, c.name), ' · ', a.label,
+        h('div', { class: 'muted small' }, a.low || a.high ? `0 = ${a.low || '…'} · 10 = ${a.high || '…'}` : ''),
+        h('button', { class: 'icon-btn', 'aria-label': 'Arc options', onclick: (e) => popupMenu(e.currentTarget, [
+          { label: 'Rename…', run: async () => { const v = await promptText('What changes?', a.label); if (v && v.trim()) { a.label = v.trim(); markDirty(); redraw(); } } },
+          { label: 'Delete arc', danger: true, run: () => { c.arcs = c.arcs.filter((x) => x !== a); markDirty(); redraw(); } },
+        ]) }, '⋯')),
+      scenes.map((s) => h('td', { class: present(c, s) ? 'here' : '' }, h('input', {
+        class: 'arc-in', type: 'number', min: 0, max: 10, step: 1, value: a.points[s.id] == null ? '' : a.points[s.id], title: present(c, s) ? c.name + ' is in this scene' : c.name + ' is not in this scene',
+        oninput: (e) => { const v = e.target.value; if (v === '') delete a.points[s.id]; else a.points[s.id] = Math.max(0, Math.min(10, Math.round(+v))); markDirty(); later(); },
+      })))));
+    root.append(h('div', { class: 'view-pad arcs viz-root' },
+      h('div', { class: 'view-head' }, h('h2', {}, 'Character arcs'),
+        h('div', { class: 'row-gap' },
+          h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: state.arcTension, onchange: (e) => { state.arcTension = e.target.checked; redraw(); } }), ' Show the tension curve'),
+          h('button', { class: 'btn primary small', onclick: () => addArc(d) }, '+ Track an arc'))),
+      arcs.length
+        ? [h('section', { class: 'chart-card' }, h('div', { class: 'legend' }, arcs.map(({ c, a }, k) => h('span', {}, h('i', { class: 'key', style: `background:${ARC_COLORS[k % ARC_COLORS.length]}` }), `${c.name} · ${a.label}`)), state.arcTension ? h('span', {}, h('i', { class: 'key tension' }), 'Tension') : null), h('div', { class: 'chart-scroll' }, arcChart(scenes, arcs, state.arcTension))),
+          h('section', { class: 'chart-card' }, h('p', { class: 'muted small' }, 'Type a value from 0 to 10 for each scene. Shaded cells are scenes the character is in; empty cells are skipped.'), h('div', { class: 'chart-scroll' }, h('table', { class: 'arc-grid' }, h('thead', {}, head), h('tbody', {}, rows))))]
+        : h('div', { class: 'empty-state' }, h('div', { class: 'empty-icon' }, '📈'), h('h3', {}, 'Watch your characters change'), h('p', { class: 'muted' }, 'Pick something that changes in a character — trust, courage, hope, how much they hide — and give each scene a value from 0 to 10. The lines show whether the change is gradual, sudden, or missing.'), h('button', { class: 'btn primary', onclick: () => addArc(d) }, '+ Track an arc'))));
+  }
+
+  // scene panel: purpose and the arcs of the characters in this scene
+  function scenePurposeSection(d, sc) {
+    const open = state.panelPurpose !== false;
+    const arcs = allArcs().filter(({ c }) => SD.sceneCharacters(d, sc).includes(c.name.trim().toUpperCase()));
+    return h('div', { class: 'ins-section' },
+      h('div', { class: 'cm-head-row' }, h('label', { class: 'lbl' }, 'Purpose of the scene'), h('button', { class: 'btn ghost small', onclick: () => { state.panelPurpose = !open; renderInspector(); } }, open ? 'Hide' : 'Show')),
+      open ? purposeCard(d, sc, null) : null,
+      arcs.length ? [h('label', { class: 'lbl' }, 'Arcs in this scene'), arcs.map(({ c, a }) => h('div', { class: 'arc-slider' },
+        h('span', { class: 'small' }, `${c.name} · ${a.label}`),
+        h('input', { type: 'range', min: 0, max: 10, value: a.points[sc.id] == null ? 5 : a.points[sc.id], class: a.points[sc.id] == null ? 'unset' : '', oninput: (e) => { a.points[sc.id] = +e.target.value; e.target.classList.remove('unset'); e.target.nextSibling.textContent = e.target.value; markDirty(); } }),
+        h('span', { class: 'small arc-v' }, a.points[sc.id] == null ? '–' : a.points[sc.id])))] : null);
+  }
+
+  // health: how things change, scene by scene
+  function valueChart(d, H) {
+    const withP = H.per.filter((p) => hasPurpose(p.scene.el));
+    if (!withP.length) return h('section', { class: 'chart-card' }, h('h3', {}, 'Does every scene turn?'), h('p', { class: 'muted small' }, 'Fill in the purpose of your scenes (scene panel or the Outline tab): what the character wants, what is in the way, and whether things end better or worse. Scenes where nothing changes are listed here.'));
+    const n = H.scenes.length, L = 36, bw = n <= 12 ? 40 : n <= 40 ? 20 : 12, W = L + n * bw + 20, CH = 120, mid = CH / 2;
+    const svg = svgEl('svg', { viewBox: `0 0 ${W} ${CH + 10}`, width: W, height: CH + 10, class: 'hchart', role: 'img', 'aria-label': 'Whether each scene ends better or worse' });
+    svg.append(svgEl('line', { x1: L, x2: W - 20, y1: mid, y2: mid, class: 'hbase' }), svgEl('text', { x: 2, y: 14, class: 'haxis' }, 'better'), svgEl('text', { x: 2, y: CH - 4, class: 'haxis' }, 'worse'));
+    H.per.forEach((p, i) => {
+      const pol = p.scene.el.purpose && p.scene.el.purpose.polarity;
+      const x0 = L + i * bw + 2, w = Math.max(2, bw - 4);
+      const g = svgEl('g', {});
+      if (pol === '+') g.append(svgEl('path', { d: barPath(x0, mid - 40, w, 40), class: 'hbar s1' }));
+      else if (pol === '-') g.append(svgEl('rect', { x: x0, y: mid, width: w, height: 40, rx: 3, class: 'hbar s2' }));
+      else if (pol === '±') g.append(svgEl('rect', { x: x0, y: mid - 20, width: w, height: 40, rx: 3, class: 'hbar mix' }));
+      else if (hasPurpose(p.scene.el)) g.append(svgEl('rect', { x: x0, y: mid - 2, width: w, height: 4, class: 'hempty' }));
+      g.append(svgEl('rect', { x: L + i * bw, y: 0, width: bw, height: CH, class: 'hhit' }));
+      const pp = p.scene.el.purpose || {};
+      hoverable(g, `<b>Scene ${p.scene.number}</b><br>${pol === '+' ? 'Ends better' : pol === '-' ? 'Ends worse' : pol === '±' ? 'Mixed' : hasPurpose(p.scene.el) ? 'Nothing changes' : 'No purpose yet'}${pp.from || pp.to ? '<br>' + esc(pp.from || '?') + ' → ' + esc(pp.to || '?') : ''}`);
+      g.addEventListener('click', () => goToScene(p.scene.id));
+      svg.append(g);
+    });
+    const flat = H.per.filter((p) => nothingChanges(p.scene.el));
+    return h('section', { class: 'chart-card' }, h('h3', {}, 'Does every scene turn?'),
+      h('p', { class: 'muted small' }, 'Up: the scene ends better for its character than it began. Down: worse. Good stories swing between the two.'),
+      h('div', { class: 'legend' }, h('span', {}, h('i', { class: 'key s1' }), 'better'), h('span', {}, h('i', { class: 'key s2' }), 'worse'), h('span', {}, h('i', { class: 'key mix' }), 'mixed')),
+      h('div', { class: 'chart-scroll' }, svg),
+      flat.length ? h('p', { class: 'warn small' }, `Nothing changes in scene ${flat.map((p) => p.scene.number).join(', ')}.`) : null);
+  }
+
+  // =====================================================================
+  // script-aware spell check (US English dictionary, loaded when you switch it on)
+  // =====================================================================
+  const spell = { on: false, typo: null, loading: null, cache: new Map(), names: new Set() };
+  const TYPO = 'https://cdn.jsdelivr.net/npm/typo-js@1.2.4/';
+  function loadScript(src) {
+    return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('offline')); document.head.append(s); });
+  }
+  function loadDictionary() {
+    if (spell.loading) return spell.loading;
+    spell.loading = (async () => {
+      if (!window.Typo) await loadScript(TYPO + 'typo.js');
+      const [aff, dic] = await Promise.all(['en_US.aff', 'en_US.dic'].map((f) => fetch(TYPO + 'dictionaries/en_US/' + f).then((r) => { if (!r.ok) throw new Error('missing'); return r.text(); })));
+      spell.typo = new window.Typo('en_US', aff, dic);
+    })();
+    spell.loading.catch(() => { spell.loading = null; });
+    return spell.loading;
+  }
+  // names the dictionary doesn't know but your project does
+  function projectNameWords() {
+    const p = state.project;
+    const set = new Set((p.dictionary || []).map((w) => w.toLowerCase()));
+    const addWords = (t) => (String(t || '').match(/[\p{L}'’]+/gu) || []).forEach((w) => set.add(w.toLowerCase().replace(/’/g, "'")));
+    for (const c of p.catalog) addWords(c.name);
+    for (const d of p.documents) if (d.kind === 'script') for (const e of d.elements) {
+      if (e.type === 'character') addWords(SD.charName(e.text));
+      if (e.type === 'scene') addWords(SD.parseSceneHeading(e.text).location);
+    }
+    addWords(p.title);
+    return set;
+  }
+  const spellOk = (raw) => {
+    const w = raw.replace(/’/g, "'").replace(/^'+|'+$/g, '');
+    if (w.length < 2 || /\d/.test(w)) return true;
+    const low = w.toLowerCase();
+    if (spell.names.has(low) || spell.names.has(low.replace(/'s$/, ''))) return true;
+    if (spell.cache.has(w)) return spell.cache.get(w);
+    const t = spell.typo;
+    const ok = t.check(w) || t.check(low) || t.check(low[0].toUpperCase() + low.slice(1)) || (w.endsWith("'s") && t.check(w.slice(0, -2)));
+    spell.cache.set(w, ok);
+    return ok;
+  };
+  function refreshSpell() {
+    if (!spell.on || !spell.typo || !editor.doc || $('#editor-wrap').hidden) { setHighlight('sd-spell', []); return; }
+    spell.names = projectNameWords();
+    const ranges = [];
+    for (const b of editor.blocks()) {
+      const text = editor.blockText(b);
+      const re = /[\p{L}'’]+/gu;
+      let m;
+      while ((m = re.exec(text))) if (!spellOk(m[0])) { const r = editor.rangeIn(b, m.index, m.index + m[0].length); if (r) ranges.push(r); }
+    }
+    setHighlight('sd-spell', ranges);
+  }
+  const refreshSpellSoon = debounce(refreshSpell, 400);
+  async function toggleSpell(force) {
+    const want = force == null ? !spell.on : force;
+    state.project.settings.spell = want;
+    spell.on = want;
+    editor.root.spellcheck = !want;
+    renderToolbar();
+    if (!want) { setHighlight('sd-spell', []); return; }
+    if (!spell.typo) {
+      toast('Loading the dictionary…');
+      try { await loadDictionary(); } catch (e) { spell.on = false; state.project.settings.spell = false; editor.root.spellcheck = true; renderToolbar(); toast('The dictionary needs an internet connection the first time. Your browser’s own spell check is on instead.'); return; }
+    }
+    refreshSpell();
+    toast('Spell check is on. Character names, places and catalog names are not flagged; right-click a word for suggestions.');
+  }
+  // Suggestions: swapped letters first (the most common typo), then the dictionary's, in the word's own capitals.
+  function spellSuggest(w) {
+    const cased = (x) => (w === w.toUpperCase() ? x.toUpperCase() : w[0] === w[0].toUpperCase() ? x[0].toUpperCase() + x.slice(1).toLowerCase() : x.toLowerCase());
+    const out = [];
+    const add = (x) => { if (!/^[\p{L}'’-]+$/u.test(x)) return; const c = cased(x); if (!out.some((y) => y.toLowerCase() === c.toLowerCase()) && c.toLowerCase() !== w.toLowerCase()) out.push(c); };
+    const low = w.toLowerCase();
+    for (let i = 0; i < low.length - 1; i++) { const t = low.slice(0, i) + low[i + 1] + low[i] + low.slice(i + 2); if (spell.typo.check(t)) add(t); }
+    for (const x of spell.typo.suggest(w, 8)) if (x === x.toLowerCase() || x === x[0].toUpperCase() + x.slice(1).toLowerCase() || w === w.toUpperCase()) add(x);
+    return out.slice(0, 6);
+  }
+
+  // right-click a flagged word: suggestions, add to the project dictionary
+  function spellMenu(e) {
+    if (!spell.on || !spell.typo) return;
+    const pos = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : (() => { const p = document.caretPositionFromPoint && document.caretPositionFromPoint(e.clientX, e.clientY); if (!p) return null; const r = document.createRange(); r.setStart(p.offsetNode, p.offset); return r; })();
+    if (!pos) return;
+    const b = editor.blockOf(pos.startContainer);
+    if (!b) return;
+    const text = editor.blockText(b);
+    const at = editor.offsetIn(b, pos.startContainer, pos.startOffset);
+    const re = /[\p{L}'’]+/gu;
+    let m, word = null;
+    while ((m = re.exec(text))) if (m.index <= at && at <= m.index + m[0].length) { word = { w: m[0], s: m.index, e: m.index + m[0].length }; break; }
+    if (!word || spellOk(word.w)) return;
+    e.preventDefault();
+    const anchor = h('div', { style: `position:fixed;left:${e.clientX}px;top:${e.clientY}px;width:1px;height:1px` });
+    document.body.append(anchor);
+    const sugg = spellSuggest(word.w);
+    const replace = (t) => { const r = editor.rangeIn(b, word.s, word.e); if (!r) return; editor.root.focus(); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); document.execCommand('insertText', false, t); };
+    popupMenu(anchor, [
+      ...(sugg.length ? sugg.map((sg) => ({ label: sg, run: () => replace(sg) })) : [{ label: 'No suggestions', run: () => {} }]),
+      '-',
+      { label: `Add “${word.w}” to the project dictionary`, run: () => { const p = state.project; p.dictionary = [...new Set([...(p.dictionary || []), word.w])]; markDirty(); refreshSpell(); } },
+    ]);
+    setTimeout(() => anchor.remove(), 500);
+  }
+
+  // =====================================================================
+  // submission package: script, sample pages, one-sheet, synopsis, character bios, query letter
+  // =====================================================================
+  const isSubmit = () => state.docId === '__submit';
+  const SUB_FORMATS = { screenplay: 'feature film', teleplay: 'TV pilot', sitcom: 'half-hour comedy pilot', stageplay: 'stage play', audioplay: 'audio drama', comic: 'comic book', av: 'video script' };
+  function submission() {
+    const p = state.project;
+    const s = (p.submission = p.submission && typeof p.submission === 'object' ? p.submission : {});
+    for (const [k, v] of Object.entries({ format: '', genre: '', comps: '', short: '', long: '', bio: '', recipient: '', company: '', why: '', letter: '', letterEdited: false, scriptId: '', samplePages: 10, chars: null, parts: null })) if (s[k] == null) s[k] = v;
+    s.parts = Object.assign({ script: true, sample: true, onesheet: true, synopsis: true, bios: true, letter: true }, s.parts || {});
+    return s;
+  }
+  function subScript() {
+    const s = submission();
+    const scripts = state.project.documents.filter((d) => d.kind === 'script');
+    return scripts.find((d) => d.id === s.scriptId) || scripts.slice().sort((a, b) => b.elements.length - a.elements.length)[0] || null;
+  }
+  const subFacts = () => {
+    const d = subScript();
+    const s = submission();
+    const tp = (d && d.titlePage) || {};
+    const pages = d ? SD.paginate(d, { size: pageSize() }).count : 0;
+    const fmt = s.format || (d ? (d.scriptType === 'screenplay' && pages < 50 ? 'short film' : SUB_FORMATS[d.scriptType] || 'script') : 'script');
+    return { d, s, tp, pages, fmt, title: (tp.title || state.project.title || 'Untitled').replace(/\n/g, ' '), author: (tp.author || '').replace(/\n/g, ', '), contact: tp.contact || '' };
+  };
+  const wordCountOf = (t) => ((t || '').match(/[\p{L}\p{N}'’-]+/gu) || []).length;
+
+  // the main characters: the biggest speaking parts, unless you picked them
+  function subCharacters() {
+    const { d, s } = subFacts();
+    if (!d) return [];
+    const stats = characterStats(d).filter((c) => c.speeches);
+    const names = Array.isArray(s.chars) ? s.chars : stats.slice(0, 5).map((c) => c.name);
+    return names.map((n) => ({ name: n, item: SD.findCatalogItem(state.project, 'character', n), stat: stats.find((c) => c.name === n) }));
+  }
+
+  function draftLetter() {
+    const f = subFacts();
+    const s = f.s;
+    const pp = [];
+    pp.push(`Dear ${s.recipient || '[name]'},`);
+    if (s.why.trim()) pp.push(s.why.trim());
+    pp.push(`I am writing to share ${f.title.toUpperCase()}, a ${f.pages}-page ${f.fmt}${s.genre ? ' (' + s.genre.trim() + ')' : ''}.`);
+    if (state.project.logline) pp.push(state.project.logline.trim());
+    if (s.comps.trim()) pp.push(`It sits alongside ${s.comps.trim().replace(/\.$/, '')}.`);
+    if (s.bio.trim()) pp.push(s.bio.trim());
+    pp.push(`${s.parts.script ? 'The script is attached' : s.parts.sample ? `The first ${s.samplePages} pages are attached` : 'I would be glad to send the script'}${s.parts.onesheet || s.parts.synopsis ? ', with a one-page summary' : ''}. Thank you for your time — I would be happy to send anything else you need.`);
+    pp.push('Kind regards,\n' + (f.author || '[your name]'));
+    return pp.join('\n\n');
+  }
+
+  function draftLongSynopsis() {
+    const { d } = subFacts();
+    if (!d) return '';
+    const units = sceneUnits(d);
+    const scenes = new Map(SD.getScenes(d).map((s) => [s.id, s]));
+    const paras = [];
+    let cur = [];
+    const flush = () => { if (cur.length) { paras.push(cur.join(' ')); cur = []; } };
+    for (const u of units) {
+      if (u.kind === 'act') { flush(); continue; }
+      if (u.kind !== 'scene') continue;
+      const s = scenes.get(u.id);
+      const syn = s && (s.el.synopsis || '').trim();
+      if (syn) cur.push(/[.!?]$/.test(syn) ? syn : syn + '.');
+      if (cur.length >= 4) flush();
+    }
+    flush();
+    return paras.join('\n\n');
+  }
+
+  // ---------- the documents ----------
+  function subDocs() {
+    const f = subFacts();
+    const s = f.s;
+    const out = [];
+    const contactBlocks = () => [{ kind: 'label', text: 'CONTACT' }, ...(f.contact ? [{ kind: 'meta', text: f.contact }] : [{ kind: 'meta', text: f.author || '' }])];
+    const footer = `${f.title}${f.author ? ' — ' + f.author : ''}`;
+    const base = safeName(f.title);
+    if (s.parts.script && f.d) out.push({ key: 'script', name: `${base} - Script.pdf`, label: 'Script', make: () => SD.layoutToPDF(SD.scriptLayout(f.d, { size: pageSize(), sceneNumbers: false, revisionMarks: 'none', titlePage: true }), { title: f.title, author: f.author }) });
+    if (s.parts.sample && f.d) out.push({ key: 'sample', name: `${base} - First ${s.samplePages} pages.pdf`, label: `Sample: first ${s.samplePages} pages`, make: () => { const L = SD.scriptLayout(f.d, { size: pageSize(), sceneNumbers: false, revisionMarks: 'none', titlePage: true }); L.pages = L.pages.filter((p) => p.title || p.no <= s.samplePages); return SD.layoutToPDF(L, { title: f.title, author: f.author }); } });
+    if (s.parts.onesheet) out.push({ key: 'onesheet', name: `${base} - One-sheet.pdf`, label: 'One-sheet', make: () => SD.proseToPDF([
+      { kind: 'title', text: f.title.toUpperCase() },
+      { kind: 'subtitle', text: `A ${f.fmt}${f.author ? ' by ' + f.author : ''}` },
+      { kind: 'label', text: 'LOGLINE' }, { kind: 'quote', text: state.project.logline || '—' },
+      { kind: 'label', text: 'AT A GLANCE' },
+      { kind: 'meta', text: [s.genre && 'Genre: ' + s.genre, f.pages && `Length: ${f.pages} pages`, f.d && SD.getScenes(f.d).length + ' scenes'].filter(Boolean).join('   ·   ') },
+      ...(s.comps ? [{ kind: 'meta', text: 'Comparable titles: ' + s.comps }] : []),
+      { kind: 'label', text: 'SYNOPSIS' }, { kind: 'p', text: s.short || '—' },
+      ...(subCharacters().length ? [{ kind: 'label', text: 'MAIN CHARACTERS' }, { kind: 'p', text: subCharacters().map((c) => c.name + (c.item && c.item.description ? ' — ' + c.item.description.split(/(?<=[.!?])\s/)[0] : '')).join('\n') }] : []),
+      ...contactBlocks(),
+    ], { size: pageSize(), title: f.title + ' — one-sheet', author: f.author }) });
+    if (s.parts.synopsis) out.push({ key: 'synopsis', name: `${base} - Synopsis.pdf`, label: 'Synopsis', make: () => SD.proseToPDF([
+      { kind: 'title', text: f.title.toUpperCase() },
+      { kind: 'subtitle', text: `Synopsis${f.author ? ' — ' + f.author : ''}` },
+      ...String(s.long || s.short || '—').split(/\n{2,}/).map((t) => ({ kind: 'p', text: t.replace(/\n/g, ' ') })),
+    ], { size: pageSize(), footer, title: f.title + ' — synopsis', author: f.author }) });
+    if (s.parts.bios) out.push({ key: 'bios', name: `${base} - Characters.pdf`, label: 'Character bios', make: () => {
+      const blocks = [{ kind: 'title', text: f.title.toUpperCase() }, { kind: 'subtitle', text: 'Characters' }];
+      for (const c of subCharacters()) {
+        const fl = (c.item && c.item.fields) || {};
+        blocks.push({ kind: 'h', text: c.name + ([fl.age, fl.occupation].filter(Boolean).length ? ' — ' + [fl.age, fl.occupation].filter(Boolean).join(', ') : '') });
+        if (c.item && c.item.description) blocks.push({ kind: 'p', text: c.item.description });
+        const stakes = fl.stakesEnd || fl.stakesMid || fl.stakesStart;
+        const extra = [['want', 'Wants'], ['need', 'Needs'], ['contradiction', 'Contradiction'], ['personality', 'Personality']].filter(([k]) => fl[k]).map(([k, l]) => `${l}: ${fl[k]}`).concat(stakes ? ['At stake: ' + stakes] : []);
+        if (extra.length) blocks.push({ kind: 'meta', text: extra.join('\n') });
+        if (!c.item || (!c.item.description && !extra.length)) blocks.push({ kind: 'meta', text: 'No description yet — add one in the Master Catalog.' });
+      }
+      return SD.proseToPDF(blocks, { size: pageSize(), footer, title: f.title + ' — characters', author: f.author });
+    } });
+    if (s.parts.letter) out.push({ key: 'letter', name: `${base} - Query letter.pdf`, label: 'Query letter', make: () => SD.proseToPDF([
+      ...(f.contact ? [{ kind: 'meta', text: (f.author ? f.author + '\n' : '') + f.contact, style: { align: 'right', size: 10 } }, { kind: 'space', h: 14 }] : []),
+      { kind: 'meta', text: new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }), style: { size: 10 } },
+      ...(s.recipient || s.company ? [{ kind: 'meta', text: [s.recipient, s.company].filter(Boolean).join('\n'), style: { size: 10 } }] : []),
+      { kind: 'space', h: 18 },
+      ...String(s.letterEdited ? s.letter : draftLetter()).split(/\n{2,}/).map((t) => ({ kind: 'p', text: t })),
+    ], { size: pageSize(), title: f.title + ' — query letter', author: f.author }) });
+    return out;
+  }
+
+  function previewDoc(doc) {
+    let blob;
+    try { blob = doc.make(); } catch (e) { console.error(e); toast('Could not make ' + doc.label + '.'); return; }
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, '_blank');
+    if (!w) download(doc.name, blob);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  async function downloadPackage() {
+    syncEditor();
+    const docs = subDocs();
+    if (!docs.length) { toast('Pick at least one part of the package.'); return; }
+    const f = subFacts();
+    const files = [];
+    for (const doc of docs) { try { files.push([doc.name, doc.make()]); } catch (e) { console.error(e); toast('Could not make ' + doc.label + '.'); return; } }
+    try {
+      const JSZip = await SD.loadJSZip();
+      const zip = new JSZip();
+      for (const [n, b] of files) zip.file(n, b);
+      download(safeName(f.title) + ' - Submission package.zip', await zip.generateAsync({ type: 'blob' }));
+      toast(`Downloaded ${files.length} files in one ZIP.`);
+    } catch (e) {
+      // no zip library (offline the first time): download the files one by one
+      for (const [n, b] of files) { download(n, b); await new Promise((r) => setTimeout(r, 400)); }
+      toast(`Downloaded ${files.length} files.`);
+    }
+  }
+
+  function renderSubmission(root) {
+    const p = state.project;
+    const s = submission();
+    const f = subFacts();
+    const changed = () => markDirty();
+    const redraw = () => { const sc = $('#other-view').scrollTop; renderView(); $('#other-view').scrollTop = sc; };
+    const counter = (t, target) => { const n = wordCountOf(t); return h('span', { class: 'sub-count' + (target && n > target ? ' over' : '') }, `${n} word${n === 1 ? '' : 's'}${target ? ' / about ' + target : ''}`); };
+    const area = (val, set, rows, ph, target) => {
+      let cnt = counter(val, target);
+      const ta = h('textarea', { class: 'input', rows, value: val || '', placeholder: ph, oninput: (e) => { set(e.target.value); const n = counter(e.target.value, target); cnt.replaceWith(n); cnt = n; changed(); refreshLetter(); } });
+      return h('div', { class: 'sub-field' }, ta, h('div', { class: 'sub-foot' }, cnt));
+    };
+    const line = (val, set, ph) => h('input', { class: 'input', value: val || '', placeholder: ph, oninput: (e) => { set(e.target.value); changed(); refreshLetter(); } });
+    const letterBox = h('textarea', { class: 'input sub-letter', rows: 16, value: s.letterEdited ? s.letter : draftLetter(), oninput: (e) => { s.letter = e.target.value; s.letterEdited = true; changed(); letterNote.hidden = false; } });
+    const letterNote = h('p', { class: 'muted small', hidden: !s.letterEdited }, 'You edited the letter, so it no longer follows the fields above. ', h('button', { class: 'linklike', onclick: () => { s.letterEdited = false; s.letter = ''; letterBox.value = draftLetter(); letterNote.hidden = true; changed(); } }, 'Rebuild it from the fields'));
+    const refreshLetter = () => { if (!s.letterEdited) letterBox.value = draftLetter(); };
+    const tp = f.tp;
+
+    // what is missing
+    const checks = [
+      [!!f.d, 'A script to send', () => {}],
+      [!!(tp.title && tp.author), 'Title page with title and your name', () => { if (f.d) { state.docId = f.d.id; state.view = 'title'; renderDocList(); renderView(); } }],
+      [!!tp.contact, 'Contact details on the title page', () => { if (f.d) { state.docId = f.d.id; state.view = 'title'; renderDocList(); renderView(); } }],
+      [!!p.logline, 'A logline', () => $('.sub-logline')?.focus()],
+      [!!s.short, 'A short synopsis', () => $('.sub-short textarea')?.focus()],
+      [!f.d || commentCount(f.d) === 0, 'No open comments left in the script', () => f.d && showAllComments(f.d)],
+      [!f.d || !SD.currentRevision(f.d), 'Not in the middle of a production revision (marks are left out anyway)', () => {}],
+    ];
+    const sec = (title, sub, ...kids) => h('section', { class: 'chart-card sub-sec' }, h('h3', {}, title), sub ? h('p', { class: 'muted small' }, sub) : null, ...kids);
+    const scripts = p.documents.filter((d) => d.kind === 'script');
+    const stats = f.d ? characterStats(f.d).filter((c) => c.speeches) : [];
+    const chosen = new Set(subCharacters().map((c) => c.name));
+    const docs = subDocs();
+
+    root.append(h('div', { class: 'view-pad sub' },
+      h('div', { class: 'view-head' }, h('h2', {}, 'Submission package'),
+        h('button', { class: 'btn primary', onclick: downloadPackage }, `⬇ Download package (${docs.length} file${docs.length === 1 ? '' : 's'})`)),
+      h('p', { class: 'muted' }, 'Everything an agent, producer, contest or fund asks for, made from your project. Fill in what is missing, preview each part, then download one ZIP.'),
+      h('div', { class: 'sub-grid' },
+        h('div', { class: 'sub-main' },
+          sec('The project', null,
+            h('div', { class: 'sb-grid2' },
+              h('label', {}, h('span', { class: 'lbl' }, 'Script'), h('select', { class: 'select', onchange: (e) => { s.scriptId = e.target.value; s.chars = null; changed(); redraw(); } }, scripts.map((d) => h('option', { value: d.id, selected: f.d && d.id === f.d.id }, d.name)))),
+              h('label', {}, h('span', { class: 'lbl' }, 'What it is'), line(s.format, (v) => { s.format = v; }, f.fmt))),
+            h('div', { class: 'sb-grid2' },
+              h('label', {}, h('span', { class: 'lbl' }, 'Genre'), line(s.genre, (v) => { s.genre = v; }, 'e.g. family drama')),
+              h('label', {}, h('span', { class: 'lbl' }, 'Comparable titles ("comps")'), line(s.comps, (v) => { s.comps = v; }, 'e.g. Aftersun meets Local Hero')))),
+          sec('Logline', 'One or two sentences: who wants what, what stands in the way, what is at stake. It is the same logline as on Home.',
+            h('div', { class: 'sub-field' }, h('textarea', { class: 'input sub-logline', rows: 3, value: p.logline || '', placeholder: 'On the last day before…', oninput: (e) => { p.logline = e.target.value; changed(); refreshLetter(); } }))),
+          sec('Short synopsis', 'For the one-sheet: the story in one paragraph, including the ending.', h('div', { class: 'sub-short' }, area(s.short, (v) => { s.short = v; }, 6, 'Who, where, what goes wrong, and how it ends.', 150))),
+          sec('Synopsis', 'One to two pages, start to finish. Draft it from your scene synopses, then make it read like a story.',
+            area(s.long, (v) => { s.long = v; }, 12, 'The full story in prose, with the ending.', 900),
+            h('button', { class: 'btn small', onclick: () => { const t = draftLongSynopsis(); if (!t) { toast('Your scenes have no synopses yet — add them in Outline or the scene panel.'); return; } if (s.long && !confirm('Replace the synopsis with a draft made from your scene synopses?')) return; s.long = t; changed(); redraw(); } }, 'Draft from scene synopses')),
+          sec('Characters', 'The bios come from the Master Catalog: description, age, occupation, wants and needs.',
+            stats.length ? h('div', { class: 'sub-chars' }, stats.slice(0, 14).map((c) => h('label', { class: 'check' },
+              h('input', { type: 'checkbox', checked: chosen.has(c.name), onchange: (e) => { const cur = new Set(subCharacters().map((x) => x.name)); if (e.target.checked) cur.add(c.name); else cur.delete(c.name); s.chars = stats.map((x) => x.name).filter((n) => cur.has(n)); changed(); redraw(); } }),
+              ' ', c.name, h('span', { class: 'muted small' }, ` · ${c.speeches} speeches`),
+              (() => { const it = SD.findCatalogItem(p, 'character', c.name); return it && it.description ? null : h('button', { class: 'linklike small', onclick: (ev) => { ev.preventDefault(); openCatalogItem(it ? it.id : null, { category: 'character', name: c.name }); } }, ' add a description'); })()))) : h('p', { class: 'muted small' }, 'The script has no dialogue yet.')),
+          sec('Query letter', 'Built from the fields on this page. Personalise it for each person you send it to.',
+            h('div', { class: 'sb-grid2' },
+              h('label', {}, h('span', { class: 'lbl' }, 'To (name)'), line(s.recipient, (v) => { s.recipient = v; }, 'e.g. Ms. Janssens')),
+              h('label', {}, h('span', { class: 'lbl' }, 'Company / contest / fund'), line(s.company, (v) => { s.company = v; }, 'e.g. North Sea Pictures'))),
+            h('label', { class: 'lbl' }, 'Why them? (optional, first paragraph)'), area(s.why, (v) => { s.why = v; }, 2, 'e.g. I loved your work on…'),
+            h('label', { class: 'lbl' }, 'About you'), area(s.bio, (v) => { s.bio = v; }, 3, 'Two or three sentences: what you have written, made or won, and why you are the one to tell this story.', 80),
+            h('label', { class: 'lbl' }, 'The letter'), letterBox, letterNote)),
+        h('aside', { class: 'sub-side' },
+          sec('In the package', null,
+            h('div', { class: 'sub-parts' }, [['script', 'Full script (PDF)'], ['sample', 'Sample pages (PDF)'], ['onesheet', 'One-sheet (PDF)'], ['synopsis', 'Synopsis (PDF)'], ['bios', 'Character bios (PDF)'], ['letter', 'Query letter (PDF)']].map(([k, l]) => h('div', { class: 'sub-part' },
+              h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.parts[k], onchange: (e) => { s.parts[k] = e.target.checked; changed(); redraw(); } }), ' ' + l),
+              k === 'sample' ? h('select', { class: 'select small', title: 'How many pages', onchange: (e) => { s.samplePages = +e.target.value; changed(); redraw(); } }, [5, 10, 15, 20, 30].map((n) => h('option', { value: n, selected: n === s.samplePages }, n + ' pages'))) : null,
+              s.parts[k] ? h('button', { class: 'btn ghost small', onclick: () => { const doc = subDocs().find((x) => x.key === k); if (doc) previewDoc(doc); } }, 'Preview') : null))),
+            h('button', { class: 'btn primary sub-dl', onclick: downloadPackage }, '⬇ Download package')),
+          sec('Before you send', null, h('ul', { class: 'sub-checks' }, checks.map(([ok, label, go]) => h('li', { class: ok ? 'ok' : 'todo' }, h('span', {}, ok ? '✓' : '○'), ok ? label : h('button', { class: 'linklike', onclick: go }, label))))),
+          sec('Facts', null, h('p', { class: 'small' }, `${f.title} — ${f.pages} pages${f.d ? ' · ' + SD.getScenes(f.d).length + ' scenes' : ''} · ${wordCountOf(p.logline)} word logline`))))));
+  }
+
+  // =====================================================================
+  // story fields: scene links, the Discover interview, setups & payoffs, gaps
+  // =====================================================================
+  const sceneLabel = (loc) => `Sc ${loc.scene.number} · ${(loc.scene.el.text || 'Untitled').toUpperCase().slice(0, 34)}`;
+
+  function pickScene(anchor, c, done) {
+    const p = state.project;
+    const scripts = p.documents.filter((d) => d.kind === 'script');
+    const upper = (c.name || '').trim().toUpperCase();
+    const items = [];
+    for (const d of scripts) {
+      const scenes = SD.getScenes(d);
+      const inIt = (s) => (c.category === 'character' ? SD.sceneCharacters(d, s).includes(upper) : c.category === 'location' ? SD.locationMatches(SD.parseSceneHeading(s.el.text).location, c.name) : (s.el.items || []).includes(c.id));
+      // scenes the character / place / item is in come first, marked with ●
+      const sorted = [...scenes.filter(inIt), ...scenes.filter((s) => !inIt(s))];
+      for (const s of sorted) items.push({ label: `${inIt(s) ? '● ' : '   '}${scripts.length > 1 ? d.name + ' · ' : ''}${s.number}. ${(s.el.text || 'Untitled').toUpperCase()}`, run: () => done(s.id) });
+    }
+    if (!items.length) { toast('There are no scenes yet.'); return; }
+    popupMenu(anchor, items);
+  }
+
+  function sceneLinksControl(c, f, changed) {
+    const wrap = h('div', { class: 'scene-links' });
+    const draw = () => {
+      const ids = SD.sceneRefs(c.fields[f.key]);
+      if (ids.length) wrap.closest('.fsection')?.querySelector(`.shown-hint[data-for="${f.key}"]`)?.remove();
+      wrap.replaceChildren(
+        ...ids.map((id) => {
+          const loc = SD.findScene(state.project, id);
+          return h('span', { class: 'chip scene-chip' + (loc ? '' : ' gone') },
+            h('button', { class: 'chip-name', title: loc ? 'Open the scene' : 'This scene was deleted', onclick: () => loc && SD.ui.goToScene(loc.doc.id, id) }, loc ? sceneLabel(loc) : 'deleted scene'),
+            h('button', { class: 'chip-x', 'aria-label': 'Remove scene', onclick: () => { const left = ids.filter((x) => x !== id); if (left.length) c.fields[f.key] = left; else delete c.fields[f.key]; changed(); draw(); } }, '×'));
+        }),
+        h('button', { class: 'btn ghost small', onclick: (e) => pickScene(e.currentTarget, c, (id) => { const cur = SD.sceneRefs(c.fields[f.key]); if (!cur.includes(id)) c.fields[f.key] = [...cur, id]; changed(); draw(); }) }, '+ Scene'));
+    };
+    draw();
+    return wrap;
+  }
+
+  // ---------- Discover: one question at a time ----------
+  function discoverSection(c) {
+    const kind = SD.discoverKind(c.category);
+    const bank = SD.DISCOVER[kind] || [];
+    c.interview = Array.isArray(c.interview) ? c.interview : [];
+    state.discSkip = state.discSkip || new Set();
+    state.discCat = state.discCat || 'All';
+    const cats = ['All', ...new Set(bank.map((x) => x.cat))];
+    const body = h('div', { class: 'fbody disc' });
+    let current = null;
+    const count = h('span', { class: 'fcount' });
+    const pick = () => {
+      const asked = new Set(c.interview.map((x) => x.q));
+      const pool = bank.filter((x) => (state.discCat === 'All' || x.cat === state.discCat) && !asked.has(x.q) && !state.discSkip.has(c.id + x.q));
+      return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+    };
+    const draw = () => {
+      const card = current
+        ? h('div', { class: 'disc-card' },
+          h('div', { class: 'disc-cat' }, current.cat),
+          h('div', { class: 'disc-q' }, current.q),
+          (() => { const ta = h('textarea', { class: 'input', rows: 3, placeholder: 'Answer as freely as you like — this is for you.' }); setTimeout(() => ta.focus(), 20); ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ta.closest('.disc-card').querySelector('.btn.primary').click(); } }); return ta; })(),
+          h('div', { class: 'row-gap' },
+            h('button', { class: 'btn primary small', onclick: (e) => { const a = e.target.closest('.disc-card').querySelector('textarea').value.trim(); if (a) { c.interview.push({ id: SD.uid(), q: current.q, cat: current.cat, a, at: new Date().toISOString() }); markDirty(); } current = pick(); draw(); } }, 'Save & next'),
+            h('button', { class: 'btn small', onclick: () => { state.discSkip.add(c.id + current.q); current = pick(); draw(); } }, 'Skip'),
+            h('button', { class: 'btn ghost small', onclick: () => { current = null; draw(); } }, 'Stop')))
+        : null;
+      count.textContent = c.interview.length ? c.interview.length + ' answered' : '';
+      body.replaceChildren(
+        h('p', { class: 'muted small' }, kind === 'character' ? 'Questions to get to know them better. Some will not matter; one might change the story.' : kind === 'location' ? 'Questions to find out what this place means.' : 'Questions about why this thing is in the story.'),
+        h('div', { class: 'row-gap' },
+          h('button', { class: 'btn small', onclick: () => { current = pick(); if (!current) toast('You have answered (or skipped) every question here. Try another group, or write your own.'); draw(); } }, '🎲 Ask me something'),
+          h('select', { class: 'select small', title: 'Kind of question', onchange: (e) => { state.discCat = e.target.value; if (current) current = pick(); draw(); } }, cats.map((x) => h('option', { value: x, selected: x === state.discCat }, x === 'All' ? 'Any kind of question' : x))),
+          h('button', { class: 'btn ghost small', onclick: async () => { const q = await promptText('Your own question', ''); if (q && q.trim()) { current = { q: q.trim(), cat: 'Your question' }; draw(); } } }, '+ My own question')),
+        card,
+        c.interview.length ? h('div', { class: 'disc-list' }, c.interview.slice().reverse().map((x) => h('div', { class: 'disc-item' },
+          h('div', { class: 'disc-iq' }, x.q, h('button', { class: 'chip-x', title: 'Delete', 'aria-label': 'Delete answer', onclick: () => { c.interview = c.interview.filter((y) => y !== x); markDirty(); draw(); } }, '×')),
+          autoGrow(h('textarea', { class: 'input', rows: 1, value: x.a, oninput: (e) => { x.a = e.target.value; markDirty(); } }))))) : null);
+    };
+    draw();
+    return h('details', { class: 'fsection', open: true },
+      h('summary', {}, 'Discover', count),
+      body);
+  }
+
+  // ---------- what the story writes down but never shows ----------
+  function storyGaps(d) {
+    const p = state.project;
+    const out = [];
+    if (!d) return out;
+    const stats = characterStats(d).filter((c) => c.speeches);
+    const items = p.catalog;
+    const open = (it) => () => openCatalogItem(it.id);
+    const main = stats.slice(0, 6).map((s) => SD.findCatalogItem(p, 'character', s.name)).filter(Boolean);
+    const lead = items.find((c) => c.category === 'character' && c.fields.function === 'Protagonist') || main[0];
+    if (lead && !lead.fields.stakesStart && !lead.fields.stakesMid && !lead.fields.stakesEnd) out.push({ icon: '⚖', text: `${lead.name} (the lead) has no stakes yet — what could they lose?`, go: open(lead) });
+    for (const c of items.filter((x) => x.category === 'character')) {
+      const f = c.fields;
+      const norm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\p{N} ]/gu, '').trim();
+      if (f.want && f.need && norm(f.want) === norm(f.need)) out.push({ icon: '=', text: `${c.name}: want and need are the same. The need is usually something they do not know they need.`, go: open(c) });
+      for (const [k, sk, label] of [['need', 'needScenes', 'need is never shown'], ['wound', 'woundScenes', 'wound is never shown'], ['line', 'lineScenes', 'line is never crossed']]) if (String(f[k] || '').trim() && !SD.sceneRefs(f[sk]).length) out.push({ icon: '◌', text: `${c.name}: the ${label} on screen`, go: open(c) });
+    }
+    // two characters chasing the same thing
+    const wants = items.filter((x) => x.category === 'character' && x.fields.want).map((c) => ({ c, words: new Set(String(c.fields.want).toLowerCase().match(/[\p{L}]{4,}/gu) || []) }));
+    for (let i = 0; i < wants.length; i++) for (let j = i + 1; j < wants.length; j++) {
+      const a = wants[i].words, b = wants[j].words;
+      const both = [...a].filter((w) => b.has(w)).length;
+      if (a.size && b.size && both / Math.min(a.size, b.size) >= 0.6) out.push({ icon: '≈', text: `${wants[i].c.name} and ${wants[j].c.name} want nearly the same thing — rivals, or one character too many?`, go: open(wants[i].c) });
+    }
+    const unpaid = items.filter((it) => SD.sceneRefs(it.fields.setupScenes).length && !SD.sceneRefs(it.fields.payoffScenes).length);
+    if (unpaid.length) out.push({ icon: '🔫', text: `${unpaid.length} thing${unpaid.length === 1 ? ' is' : 's are'} planted but never paid off: ${unpaid.slice(0, 3).map((x) => x.name).join(', ')}`, go: () => { state.docId = d.id; state.view = 'reports'; state.reportTab = 'setups'; renderDocList(); renderView(); } });
+    return out;
+  }
+
+  // ---------- reports ----------
+  function setupsReport(d) {
+    const p = state.project;
+    const scenes = SD.getScenes(d);
+    const pos = new Map(scenes.map((s, i) => [s.id, i]));
+    const label = (id) => { const loc = SD.findScene(p, id); return loc ? (loc.doc === d ? 'Sc ' + loc.scene.number : loc.doc.name + ' sc ' + loc.scene.number) : 'deleted'; };
+    const planted = p.catalog.filter((it) => SD.sceneRefs(it.fields.setupScenes).length || SD.sceneRefs(it.fields.payoffScenes).length);
+    const rows = planted.map((it) => {
+      const set = SD.sceneRefs(it.fields.setupScenes), pay = SD.sceneRefs(it.fields.payoffScenes);
+      const first = (ids) => Math.min(...ids.map((id) => (pos.has(id) ? pos.get(id) : Infinity)));
+      let status = '✓ planted and paid off';
+      if (!pay.length) status = '⚠ planted, never paid off';
+      else if (!set.length) status = '⚠ pays off without a setup';
+      else if (first(pay) < first(set)) status = '⚠ pays off before it is planted';
+      return { it, set, pay, status, ok: status.startsWith('✓') };
+    }).sort((a, b) => Number(a.ok) - Number(b.ok));
+    const chars = p.catalog.filter((c) => c.category === 'character' && ['need', 'wound', 'secret', 'line'].some((k) => String(c.fields[k] || '').trim()));
+    const thread = (c, k, sk) => (String(c.fields[k] || '').trim() ? (SD.sceneRefs(c.fields[sk]).length ? '✓ ' + SD.sceneRefs(c.fields[sk]).map(label).join(', ') : '◌ not on screen') : '—');
+    return h('div', { class: 'setups' },
+      h('section', { class: 'chart-card' }, h('h3', {}, 'Setups & payoffs'),
+        h('p', { class: 'muted small' }, 'Every prop, costume or sound that matters later should be planted first. Link the scenes on an item’s catalog page, under “In the story”.'),
+        rows.length ? h('table', { class: 'report' }, h('thead', {}, h('tr', {}, ['Item', 'Planted in', 'Pays off in', ''].map((x) => h('th', {}, x)))),
+          h('tbody', {}, rows.map((r) => h('tr', { class: r.ok ? '' : 'warn-row' },
+            h('td', {}, h('button', { class: 'linklike', onclick: () => openCatalogItem(r.it.id) }, r.it.name), h('span', { class: 'muted small' }, ' · ' + SD.categoryById(r.it.category).one)),
+            h('td', {}, r.set.map(label).join(', ') || '—'), h('td', {}, r.pay.map(label).join(', ') || '—'), h('td', {}, r.status)))))
+          : h('p', { class: 'muted' }, 'Nothing is planted yet. Open a prop in the Master Catalog and link the scene where it first appears and the scene where it matters.')),
+      h('section', { class: 'chart-card' }, h('h3', {}, 'Character threads'),
+        h('p', { class: 'muted small' }, 'What you wrote about each character, and whether the script shows it.'),
+        chars.length ? h('table', { class: 'report' }, h('thead', {}, h('tr', {}, ['Character', 'Need — learned in', 'Wound — seen in', 'Secret — revealed in', 'Line — crossed in'].map((x) => h('th', {}, x)))),
+          h('tbody', {}, chars.map((c) => h('tr', {}, h('td', {}, h('button', { class: 'linklike', onclick: () => openCatalogItem(c.id) }, c.name)),
+            h('td', {}, thread(c, 'need', 'needScenes')), h('td', {}, thread(c, 'wound', 'woundScenes')), h('td', {}, thread(c, 'secret', 'secretScenes')), h('td', {}, thread(c, 'line', 'lineScenes'))))))
+          : h('p', { class: 'muted' }, 'Fill in a character’s need, wound, secret or line in the Master Catalog (Story core, Wound, Secrets) to follow them here.')));
+  }
+
+  function whoWantsWhat(d) {
+    const p = state.project;
+    const cast = characterStats(d).filter((c) => c.speeches).slice(0, 8).map((s) => SD.findCatalogItem(p, 'character', s.name) || { name: s.name, fields: {}, missing: true });
+    const any = cast.some((c) => c.fields.want || c.fields.need || c.fields.stakesStart || c.fields.stakesEnd);
+    const gaps = storyGaps(d);
+    return h('section', { class: 'chart-card' }, h('h3', {}, 'Who wants what'),
+      h('p', { class: 'muted small' }, 'The main characters side by side. Strong casts want different, colliding things — and each has something to lose.'),
+      any ? h('div', { class: 'chart-scroll' }, h('table', { class: 'report wants' }, h('thead', {}, h('tr', {}, ['Character', 'Wants', 'Needs', 'Could lose (climax)', 'Contradiction'].map((x) => h('th', {}, x)))),
+        h('tbody', {}, cast.map((c) => h('tr', {},
+          h('td', {}, h('button', { class: 'linklike', onclick: () => openCatalogItem(c.missing ? null : c.id, { category: 'character', name: c.name }) }, c.name)),
+          h('td', {}, c.fields.want || h('span', { class: 'muted' }, '—')), h('td', {}, c.fields.need || h('span', { class: 'muted' }, '—')),
+          h('td', {}, c.fields.stakesEnd || c.fields.stakesMid || c.fields.stakesStart || h('span', { class: 'muted' }, '—')),
+          h('td', {}, c.fields.contradiction || h('span', { class: 'muted' }, '—')))))))
+        : h('p', { class: 'muted' }, 'Open a character in the Master Catalog and fill in “Story core” and “Stakes” to compare them here.'),
+      gaps.length ? h('ul', { class: 'gap-list' }, gaps.map((g) => h('li', {}, h('span', {}, g.icon), ' ', h('button', { class: 'linklike', onclick: g.go }, g.text)))) : null);
   }
 
   // Print any nodes through #print-root.

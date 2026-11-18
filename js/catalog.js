@@ -76,6 +76,44 @@
         ],
       },
       {
+        title: 'Story core', fields: [
+          { key: 'want', label: 'Want — the outward goal', type: 'textarea', wide: true, help: 'What they go after in the story, something you could film.' },
+          { key: 'need', label: 'Need — what they really have to learn or accept', type: 'textarea', wide: true, shown: 'needScenes' },
+          { key: 'needScenes', label: 'Where do they finally get it?', type: 'scenes', wide: true },
+          { key: 'contradiction', label: 'Contradiction — “they are ___ but ___”', wide: true, help: 'e.g. “a ferry captain who is afraid of the sea”. Contradictions make characters feel real.' },
+          { key: 'strengthWeakness', label: 'A strength that becomes a weakness', type: 'textarea', wide: true },
+        ],
+      },
+      {
+        title: 'Stakes', check: (c) => {
+          const f = c.fields || {};
+          if (!f.stakesStart && !f.stakesMid && !f.stakesEnd) return null;
+          if (!f.stakesMid || !f.stakesEnd) return 'Stakes usually climb. What could they lose in the middle, and at the climax?';
+          return null;
+        }, fields: [
+          { key: 'stakesStart', label: 'At the start, they could lose…', type: 'textarea', wide: true, help: 'Write the stakes as a ladder — each rung higher than the last.' },
+          { key: 'stakesMid', label: 'By the middle, they could lose…', type: 'textarea', wide: true },
+          { key: 'stakesEnd', label: 'At the climax, they could lose…', type: 'textarea', wide: true, help: 'Often the thing they care about most, or who they are.' },
+        ],
+      },
+      {
+        title: 'Wound, lie & truth', fields: [
+          { key: 'wound', label: 'The wound — what happened to them before the story', type: 'textarea', wide: true, shown: 'woundScenes' },
+          { key: 'woundScenes', label: 'Where do we see (or hear about) the wound?', type: 'scenes', wide: true },
+          { key: 'lie', label: 'The lie they believe because of it', type: 'textarea', wide: true },
+          { key: 'truth', label: 'The truth they come to understand', type: 'textarea', wide: true },
+        ],
+      },
+      {
+        title: 'Secrets & lines', fields: [
+          { key: 'secret', label: 'Secret', type: 'textarea', wide: true, shown: 'secretScenes' },
+          { key: 'secretFrom', label: 'Hidden from whom?' },
+          { key: 'secretScenes', label: 'Where does it come out?', type: 'scenes' },
+          { key: 'line', label: 'A line they will never cross…', type: 'textarea', wide: true, shown: 'lineScenes' },
+          { key: 'lineScenes', label: '…and the scene where they cross it', type: 'scenes', wide: true },
+        ],
+      },
+      {
         title: 'Physical description', fields: [
           { key: 'age', label: 'Age' },
           { key: 'gender', label: 'Gender' },
@@ -152,6 +190,23 @@
           { key: 'standsIn', label: 'Real place it stands in for', help: 'e.g. a café that plays the "Kitchen".' },
         ],
       },
+      {
+        title: 'What the place means', fields: [
+          { key: 'meaning', label: 'What it means to the characters', type: 'textarea', wide: true, help: 'Home, prison, escape, a memory… and is it the same for everyone?' },
+          { key: 'power', label: 'Who has power here? Who is only a guest?', type: 'textarea', wide: true },
+          { key: 'onlyHere', label: 'What can only happen here?', type: 'textarea', wide: true },
+          { key: 'placeSecret', label: 'The secret of the place', type: 'textarea', wide: true },
+          { key: 'placeChange', label: 'How it changes between the first and the last time we see it', type: 'textarea', wide: true },
+        ],
+      },
+      {
+        title: 'The senses', fields: [
+          { key: 'sound', label: 'Sound', type: 'textarea' },
+          { key: 'smell', label: 'Smell', type: 'textarea' },
+          { key: 'light', label: 'Light', type: 'textarea' },
+          { key: 'temperature', label: 'Temperature & air', type: 'textarea' },
+        ],
+      },
       contact(),
       {
         title: 'Facility information', fields: [
@@ -188,9 +243,24 @@
   // Prices for the budget. Characters cost what their actor costs.
   SD.PRICE_UNITS = ['per shoot day', 'per week', 'one-off', 'per item'];
   SD.defaultPriceUnit = (category) => (['actor', 'crew', 'extras', 'stunts', 'location', 'vehicle', 'animal', 'equipment', 'set'].includes(category) ? (category === 'set' ? 'one-off' : 'per shoot day') : 'one-off');
+  SD.PLANT_CATEGORIES = new Set(['prop', 'wardrobe', 'makeup', 'hair', 'setdressing', 'vehicle', 'animal', 'weapon', 'equipment', 'sfx', 'vfx', 'sound', 'music', 'other']);
   for (const c of SD.CATEGORIES) {
     if (c.id === 'character') continue;
     const form = (SD.CATALOG_FORMS[c.id] = (SD.CATALOG_FORMS[c.id] || generic).slice());
+    if (SD.PLANT_CATEGORIES.has(c.id)) form.splice(1, 0, {
+      title: 'In the story', check: (it) => {
+        const f = it.fields || {};
+        const set = SD.sceneRefs(f.setupScenes).length, pay = SD.sceneRefs(f.payoffScenes).length;
+        if (set && !pay) return 'Planted, but never paid off yet. Where does it matter?';
+        if (pay && !set) return 'It pays off, but is never set up. Show it earlier so the payoff feels earned.';
+        return null;
+      }, fields: [
+        { key: 'setupScenes', label: 'Set up in (planted)', type: 'scenes', wide: true, help: 'Where the audience first sees or hears about it.' },
+        { key: 'payoffScenes', label: 'Pays off in', type: 'scenes', wide: true, help: 'Where it turns out to matter.' },
+        { key: 'reveals', label: 'What it says about its owner', type: 'textarea', wide: true },
+        { key: 'itemChange', label: 'How it changes (or what happens to it)', type: 'textarea', wide: true },
+      ],
+    });
     if (c.id === 'location') form.push({ title: 'On the map', fields: [{ key: 'lat', label: 'Latitude' }, { key: 'lng', label: 'Longitude' }] });
     form.push({
       title: 'Budget', fields: [
@@ -200,6 +270,19 @@
       ],
     });
   }
+  // A "scenes" field holds scene ids (the scene heading elements of any script).
+  SD.sceneRefs = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+  // Where a scene id lives: { doc, scene } or null
+  SD.findScene = (project, id) => {
+    for (const d of project.documents) {
+      if (d.kind !== 'script') continue;
+      if (!d.elements.some((e) => e.id === id)) continue;
+      const sc = SD.getScenes(d).find((s) => s.id === id);
+      if (sc) return { doc: d, scene: sc };
+    }
+    return null;
+  };
+
   // "€ 1.250,50", "1,250.50", "250" -> number
   SD.parseMoney = (v) => {
     let t = String(v == null ? '' : v).replace(/[^\d.,-]/g, '');
