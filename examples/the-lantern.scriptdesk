@@ -2,8 +2,8 @@
  "app": "scriptdesk",
  "version": 1,
  "title": "The Lantern",
- "created": "2026-11-18T14:45:50.055Z",
- "modified": "2026-11-18T14:45:50.055Z",
+ "created": "2026-11-19T10:28:39.549Z",
+ "modified": "2026-11-19T10:28:39.549Z",
  "settings": {
   "pageSize": "letter",
   "sceneNumbers": false,
@@ -11,7 +11,7 @@
  },
  "documents": [
   {
-   "id": "ex0008r",
+   "id": "ex00091",
    "kind": "script",
    "scriptType": "audioplay",
    "name": "The Lantern",
@@ -27,97 +27,97 @@
    },
    "elements": [
     {
-     "id": "ex0008t",
+     "id": "ex00093",
      "type": "scene",
      "text": "SCENE 1. A LIGHTHOUSE. NIGHT."
     },
     {
-     "id": "ex0008u",
+     "id": "ex00094",
      "type": "sound",
      "text": "WIND HOWLS AROUND STONE. A HEAVY DOOR SLAMS."
     },
     {
-     "id": "ex0008v",
+     "id": "ex00095",
      "type": "music",
      "text": "A LOW CELLO NOTE, HELD."
     },
     {
-     "id": "ex0008w",
+     "id": "ex00096",
      "type": "action",
      "text": "Footsteps on an iron spiral staircase, climbing, slowing."
     },
     {
-     "id": "ex0008x",
+     "id": "ex00097",
      "type": "character",
      "text": "GRETA"
     },
     {
-     "id": "ex0008y",
+     "id": "ex00098",
      "type": "parenthetical",
      "text": "(out of breath)"
     },
     {
-     "id": "ex0008z",
+     "id": "ex00099",
      "type": "dialogue",
      "text": "Two hundred and twelve steps. Every night for thirty years, and I still count them."
     },
     {
-     "id": "ex00090",
+     "id": "ex0009a",
      "type": "sound",
      "text": "A MATCH STRIKES. A HISS AS THE LAMP CATCHES."
     },
     {
-     "id": "ex00091",
+     "id": "ex0009b",
      "type": "character",
      "text": "GRETA"
     },
     {
-     "id": "ex00092",
+     "id": "ex0009c",
      "type": "dialogue",
      "text": "There you are, old friend. Let's see who's out there tonight."
     },
     {
-     "id": "ex00093",
+     "id": "ex0009d",
      "type": "sound",
      "text": "FAINT, FAR OFF — A SHIP'S HORN. ONCE. TWICE."
     },
     {
-     "id": "ex00094",
+     "id": "ex0009e",
      "type": "character",
      "text": "GRETA"
     },
     {
-     "id": "ex00095",
+     "id": "ex0009f",
      "type": "parenthetical",
      "text": "(sharp)"
     },
     {
-     "id": "ex00096",
+     "id": "ex0009g",
      "type": "dialogue",
      "text": "That's not a ship I know."
     },
     {
-     "id": "ex00097",
+     "id": "ex0009h",
      "type": "scene",
      "text": "SCENE 2. THE LANTERN ROOM. LATER."
     },
     {
-     "id": "ex00098",
+     "id": "ex0009i",
      "type": "sound",
      "text": "THE LAMP TURNS WITH A SLOW MECHANICAL TICK."
     },
     {
-     "id": "ex00099",
+     "id": "ex0009j",
      "type": "character",
      "text": "RADIO VOICE"
     },
     {
-     "id": "ex0009a",
+     "id": "ex0009k",
      "type": "parenthetical",
      "text": "(distorted, through static)"
     },
     {
-     "id": "ex0009b",
+     "id": "ex0009l",
      "type": "dialogue",
      "text": "Lighthouse... lighthouse, this is the Esperanza... we see your light... we've been seeing it for sixty years...",
      "fmt": [
@@ -129,22 +129,22 @@
      ]
     },
     {
-     "id": "ex0009c",
+     "id": "ex0009m",
      "type": "music",
      "text": "THE CELLO RISES, UNEASY."
     },
     {
-     "id": "ex0009d",
+     "id": "ex0009n",
      "type": "character",
      "text": "GRETA"
     },
     {
-     "id": "ex0009e",
+     "id": "ex0009o",
      "type": "dialogue",
      "text": "The Esperanza sank in nineteen sixty-four."
     },
     {
-     "id": "ex0009f",
+     "id": "ex0009p",
      "type": "sound",
      "text": "STATIC SWALLOWS THE VOICE. ONLY WIND."
     }
@@ -153,7 +153,7 @@
  ],
  "catalog": [
   {
-   "id": "ex0009i",
+   "id": "ex0009s",
    "category": "character",
    "name": "GRETA",
    "description": "The last lighthouse keeper on the coast.",
@@ -166,7 +166,7 @@
    "custom": []
   },
   {
-   "id": "ex0009j",
+   "id": "ex0009t",
    "category": "character",
    "name": "RADIO VOICE",
    "description": "",
@@ -177,7 +177,7 @@
    "custom": []
   },
   {
-   "id": "ex0009k",
+   "id": "ex0009u",
    "category": "sound",
    "name": "Wind and storm bed",
    "description": "",
@@ -190,7 +190,7 @@
    "custom": []
   },
   {
-   "id": "ex0009l",
+   "id": "ex0009v",
    "category": "music",
    "name": "Solo cello theme",
    "description": "",

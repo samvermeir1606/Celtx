@@ -2,8 +2,8 @@
  "app": "scriptdesk",
  "version": 1,
  "title": "The Last Ferry",
- "created": "2026-11-18T14:45:50.026Z",
- "modified": "2026-11-18T14:45:50.026Z",
+ "created": "2026-11-19T10:28:39.543Z",
+ "modified": "2026-11-19T10:28:39.543Z",
  "settings": {
   "pageSize": "letter",
   "sceneNumbers": true,
@@ -111,7 +111,8 @@
      },
      "items": [
       "ex0002l",
-      "ex0002n"
+      "ex0002n",
+      "ex00052"
      ]
     },
     {
@@ -208,7 +209,9 @@
      },
      "items": [
       "ex0002o",
-      "ex0002m"
+      "ex0002m",
+      "ex0002n",
+      "ex00051"
      ]
     },
     {
@@ -287,7 +290,8 @@
      "items": [
       "ex0002k",
       "ex0002n",
-      "ex0002m"
+      "ex0002m",
+      "ex00051"
      ]
     },
     {
@@ -384,7 +388,8 @@
      },
      "items": [
       "ex0002s",
-      "ex0002n"
+      "ex0002n",
+      "ex00051"
      ]
     },
     {
@@ -466,7 +471,11 @@
      },
      "items": [
       "ex0002j",
-      "ex0002m"
+      "ex0002m",
+      "ex0002n",
+      "ex00051",
+      "ex00052",
+      "ex00059"
      ]
     },
     {
@@ -537,37 +546,40 @@
       "polarity": "+"
      },
      "items": [
-      "ex0002n"
+      "ex0002n",
+      "ex00050",
+      "ex00052",
+      "ex00059"
      ],
      "versionName": "Under the bridge",
      "versions": [
       {
-       "id": "ex0005a",
+       "id": "ex0005k",
        "name": "At the ceremony",
        "created": "2026-01-12T09:00:00.000Z",
        "elements": [
         {
-         "id": "ex0005b",
+         "id": "ex0005l",
          "type": "action",
          "text": "Elsa ties up the Margit for the last time. Up on the bridge, a brass band starts to play."
         },
         {
-         "id": "ex0005c",
+         "id": "ex0005m",
          "type": "action",
          "text": "She climbs the stairs to the ceremony in her captain’s coat. Tomas sees her and stops mid-speech."
         },
         {
-         "id": "ex0005d",
+         "id": "ex0005n",
          "type": "character",
          "text": "TOMAS"
         },
         {
-         "id": "ex0005e",
+         "id": "ex0005o",
          "type": "dialogue",
          "text": "The front row is still free."
         },
         {
-         "id": "ex0005f",
+         "id": "ex0005p",
          "type": "transition",
          "text": "FADE OUT."
         }
@@ -811,14 +823,14 @@
    }
   },
   {
-   "id": "ex0005g",
+   "id": "ex0005q",
    "kind": "timeline",
    "name": "Timeline",
    "sourceId": "ex00001",
    "order": [
-    "ex0005h",
-    "ex0005i",
-    "ex0005j",
+    "ex0005r",
+    "ex0005s",
+    "ex0005t",
     "ex00003",
     "ex0000a",
     "ex0000p",
@@ -829,22 +841,22 @@
    ],
    "events": [
     {
-     "id": "ex0005h",
+     "id": "ex0005r",
      "text": "Elsa’s father lets her steer the ferry for the first time"
     },
     {
-     "id": "ex0005i",
+     "id": "ex0005s",
      "text": "Elsa’s husband Jens, the ferry’s engineer, dies"
     },
     {
-     "id": "ex0005j",
+     "id": "ex0005t",
      "text": "Building of the bridge begins — Tomas is the engineer"
     }
    ],
    "when": {
-    "ex0005h": "1962",
-    "ex0005i": "6 years ago",
-    "ex0005j": "3 years ago",
+    "ex0005r": "1962",
+    "ex0005s": "6 years ago",
+    "ex0005t": "3 years ago",
     "ex00003": "The last day, dawn",
     "ex0000y": "Mid-morning",
     "ex0001n": "Noon",
@@ -852,7 +864,7 @@
    }
   },
   {
-   "id": "ex0005k",
+   "id": "ex0005u",
    "kind": "relations",
    "name": "Relationships",
    "sourceId": "ex00001",
@@ -872,7 +884,7 @@
    },
    "links": [
     {
-     "id": "ex0005l",
+     "id": "ex0005v",
      "a": "ex00029",
      "b": "ex0002b",
      "kind": "family",
@@ -882,7 +894,7 @@
      "unsaid": "His father would have loved the bridge.",
      "changes": [
       {
-       "id": "ex0005m",
+       "id": "ex0005w",
        "sceneId": "ex0001y",
        "kind": "love",
        "label": "side by side again"
@@ -890,7 +902,7 @@
      ]
     },
     {
-     "id": "ex0005n",
+     "id": "ex0005x",
      "a": "ex00029",
      "b": "ex0002a",
      "kind": "rivals",
@@ -900,7 +912,7 @@
      "from": "ex0000p",
      "changes": [
       {
-       "id": "ex0005o",
+       "id": "ex0005y",
        "sceneId": "ex0001c",
        "kind": "friends",
        "label": "she lets Noor steer"
@@ -908,7 +920,7 @@
      ]
     },
     {
-     "id": "ex0005p",
+     "id": "ex0005z",
      "a": "ex0002b",
      "b": "ex00029",
      "kind": "secret",
@@ -1339,19 +1351,19 @@
    ]
   },
   {
-   "id": "ex0005q",
+   "id": "ex00060",
    "kind": "moodboard",
    "name": "Mood board",
    "cards": [
     {
-     "id": "ex0005r",
+     "id": "ex00061",
      "type": "text",
      "text": "Grey, wet, quiet. The warmth is in the hands, never in the light.",
      "caption": "The feeling",
      "wide": true
     },
     {
-     "id": "ex0005s",
+     "id": "ex00062",
      "type": "palette",
      "colors": [
       "#2e3b42",
@@ -1363,7 +1375,7 @@
      "caption": "Sea fog + the rust-red of the Margit"
     },
     {
-     "id": "ex0005t",
+     "id": "ex00063",
      "type": "palette",
      "colors": [
       "#3d2b1f",
@@ -1375,19 +1387,19 @@
      "caption": "Inside the wheelhouse: wood and brass"
     },
     {
-     "id": "ex0005u",
+     "id": "ex00064",
      "type": "text",
      "text": "“Nobody can drive a boat. You just argue with it.”",
      "caption": "Elsa"
     },
     {
-     "id": "ex0005v",
+     "id": "ex00065",
      "type": "text",
      "text": "Sounds: the diesel engine, gulls, the VHF radio hiss, rope on steel.",
      "caption": "Sound"
     },
     {
-     "id": "ex0005w",
+     "id": "ex00066",
      "type": "link",
      "url": "https://www.openstreetmap.org/#map=13/55.04/10.6",
      "caption": "The real crossing"
@@ -1468,7 +1480,7 @@
    }
   },
   {
-   "id": "ex0005x",
+   "id": "ex00067",
    "kind": "locmap",
    "name": "Location map",
    "scheduleId": "ex0004u",
@@ -1480,14 +1492,14 @@
    "hiddenDays": []
   },
   {
-   "id": "ex00050",
+   "id": "ex0005a",
    "kind": "budget",
    "name": "Budget",
    "scheduleId": "ex0004u",
    "currency": "EUR",
    "manual": [
     {
-     "id": "ex00051",
+     "id": "ex0005b",
      "group": "general",
      "label": "Catering (whole crew & cast)",
      "unit": "per shoot day",
@@ -1495,7 +1507,7 @@
      "qty": ""
     },
     {
-     "id": "ex00052",
+     "id": "ex0005c",
      "group": "general",
      "label": "Insurance",
      "unit": "one-off",
@@ -1503,7 +1515,7 @@
      "qty": ""
     },
     {
-     "id": "ex00053",
+     "id": "ex0005d",
      "group": "post",
      "label": "Editing",
      "unit": "per week",
@@ -1511,7 +1523,7 @@
      "qty": "2"
     },
     {
-     "id": "ex00054",
+     "id": "ex0005e",
      "group": "post",
      "label": "Music & sound mix",
      "unit": "one-off",
@@ -1519,7 +1531,7 @@
      "qty": ""
     },
     {
-     "id": "ex00055",
+     "id": "ex0005f",
      "group": "transport",
      "label": "Camera package rental",
      "unit": "per shoot day",
@@ -1535,7 +1547,7 @@
    "scriptId": ""
   },
   {
-   "id": "ex00059",
+   "id": "ex0005j",
    "kind": "note",
    "name": "Ideas & research",
    "text": "Research Real ferries replaced by bridges: talk to a retired captain VHF radio etiquette: “Margit, Margit, this is…” Possible title The Last Ferry / Crossing / Margit",
@@ -1543,7 +1555,7 @@
    "about": []
   },
   {
-   "id": "ex00057",
+   "id": "ex0005h",
    "kind": "note",
    "name": "Elsa — notes",
    "text": "Elsa She never says what she feels. She does things: the coffee, the steering wheel, the hand on the hull. 41 years on the same crossing Husband Jens died six years ago — he kept the engine running Doesn’t hate the bridge. Hates being thanked . “Nobody can drive a boat. You just argue with it.”",
@@ -1551,10 +1563,10 @@
    "about": [
     "ex00029"
    ],
-   "folder": "ex00056"
+   "folder": "ex0005g"
   },
   {
-   "id": "ex00058",
+   "id": "ex0005i",
    "kind": "note",
    "name": "Noor — notes",
    "text": "Noor Not running from something dramatic. Running because nobody noticed she was sad. Her cousin on the island doesn’t know she’s coming. The phone call on the pier is the turn: she lets her mother come and get her.",
@@ -1562,7 +1574,7 @@
    "about": [
     "ex0002a"
    ],
-   "folder": "ex00056"
+   "folder": "ex0005g"
   }
  ],
  "catalog": [
@@ -1722,7 +1734,9 @@
    "tags": "",
    "fields": {
     "price": "400",
-    "priceUnit": "per shoot day"
+    "priceUnit": "per shoot day",
+    "unavailable": "2026-05-05",
+    "dietary": "Vegetarian"
    },
    "links": {},
    "media": [],
@@ -1864,7 +1878,16 @@
    "tags": "",
    "fields": {
     "price": "120",
-    "priceUnit": "one-off"
+    "priceUnit": "one-off",
+    "wornScenes": [
+     "ex00003",
+     "ex0000a",
+     "ex0000p",
+     "ex0000y",
+     "ex0001c",
+     "ex0001n",
+     "ex0001y"
+    ]
    },
    "links": {
     "usedBy": [
@@ -1872,7 +1895,30 @@
     ]
    },
    "media": [],
-   "custom": []
+   "custom": [],
+   "states": [
+    {
+     "id": "ex00053",
+     "label": "dry"
+    },
+    {
+     "id": "ex00054",
+     "label": "wet with spray",
+     "from": "ex0000y",
+     "note": "Shoulders and sleeves dark with sea water"
+    },
+    {
+     "id": "ex00055",
+     "label": "soaked",
+     "from": "ex0001c",
+     "note": "Dripping; hair wet too"
+    },
+    {
+     "id": "ex00056",
+     "label": "drying",
+     "from": "ex0001y"
+    }
+   ]
   },
   {
    "id": "ex0002o",
@@ -1882,7 +1928,12 @@
    "tags": "",
    "fields": {
     "price": "90",
-    "priceUnit": "per shoot day"
+    "priceUnit": "per shoot day",
+    "vehicleUse": "Picture car (seen up close)",
+    "driver": "Parked",
+    "makeModel": "Ford Transit",
+    "year": "2009",
+    "color": "White"
    },
    "links": {},
    "media": [],
@@ -1897,7 +1948,8 @@
    "fields": {
     "price": "450",
     "priceUnit": "per shoot day",
-    "position": "DoP"
+    "position": "DoP",
+    "department": "Camera"
    },
    "links": {},
    "media": [],
@@ -1911,7 +1963,8 @@
    "tags": "",
    "fields": {
     "price": "320",
-    "priceUnit": "per shoot day"
+    "priceUnit": "per shoot day",
+    "department": "Sound"
    },
    "links": {},
    "media": [],
@@ -1925,7 +1978,14 @@
    "tags": "",
    "fields": {
     "price": "280",
-    "priceUnit": "per shoot day"
+    "priceUnit": "per shoot day",
+    "department": "Electric",
+    "kitFee": "40",
+    "booking": "Only some days",
+    "bookedDays": [
+     "ex0004v",
+     "ex0004w"
+    ]
    },
    "links": {},
    "media": [],
@@ -1939,6 +1999,116 @@
    "tags": "",
    "fields": {
     "price": "140",
+    "priceUnit": "per shoot day",
+    "see": "Thick sea fog rolling over the deck; the island disappears.",
+    "how": "Both",
+    "complexity": "Medium",
+    "shots": "6",
+    "supervisor": "Booked",
+    "method": "Fog machine on the foredeck, thickened in grading."
+   },
+   "links": {},
+   "media": [],
+   "custom": []
+  },
+  {
+   "id": "ex00050",
+   "category": "wardrobe",
+   "name": "Her husband’s scarf",
+   "description": "",
+   "tags": "",
+   "fields": {
+    "price": "0",
+    "priceUnit": "one-off",
+    "color": "Faded red wool",
+    "wornScenes": [
+     "ex0001y"
+    ]
+   },
+   "links": {
+    "usedBy": [
+     "ex00029"
+    ]
+   },
+   "media": [],
+   "custom": []
+  },
+  {
+   "id": "ex00051",
+   "category": "wardrobe",
+   "name": "Noor’s grey hoodie",
+   "description": "",
+   "tags": "",
+   "fields": {
+    "price": "25",
+    "priceUnit": "one-off",
+    "quantity": "3",
+    "size": "S",
+    "wornScenes": [
+     "ex0000p",
+     "ex0000y",
+     "ex0001c",
+     "ex0001n"
+    ]
+   },
+   "links": {
+    "usedBy": [
+     "ex0002a"
+    ]
+   },
+   "media": [],
+   "custom": [],
+   "states": [
+    {
+     "id": "ex00057",
+     "label": "clean"
+    },
+    {
+     "id": "ex00058",
+     "label": "oil stain on the cuff",
+     "from": "ex0001c",
+     "note": "From the wheel — left cuff"
+    }
+   ]
+  },
+  {
+   "id": "ex00052",
+   "category": "wardrobe",
+   "name": "Tomas’s site jacket",
+   "description": "",
+   "tags": "",
+   "fields": {
+    "price": "60",
+    "priceUnit": "one-off",
+    "wornScenes": [
+     "ex0000a",
+     "ex0001n",
+     "ex0001y"
+    ]
+   },
+   "links": {
+    "usedBy": [
+     "ex0002b"
+    ]
+   },
+   "media": [],
+   "custom": []
+  },
+  {
+   "id": "ex00059",
+   "category": "extras",
+   "name": "Bridge crew on the pier",
+   "description": "",
+   "tags": "",
+   "fields": {
+    "extraType": "Crowd",
+    "quantity": "6",
+    "sceneCounts": {
+     "ex0001n": 8,
+     "ex0001y": 20
+    },
+    "look": "Hi-vis vests, hard hats",
+    "price": "120",
     "priceUnit": "per shoot day"
    },
    "links": {},
@@ -1955,7 +2125,7 @@
  "logline": "On the last day before a bridge replaces her ferry, a stubborn old captain finds a runaway teenager on board — and has one crossing left to make peace with her son.",
  "folders": [
   {
-   "id": "ex00056",
+   "id": "ex0005g",
    "name": "Character notes",
    "open": true
   }

@@ -119,13 +119,27 @@
         days = daysFor(ids);
         basis = plays.length ? `plays ${plays.map((c) => c.name).join(', ')} · ${ids.length} scenes` : 'not cast in a role yet';
       } else if (it.category === 'crew') {
-        days = totalDays + (+d.prepDays || 0);
-        basis = `${totalDays} shoot days` + (+d.prepDays ? ` + ${d.prepDays} prep` : '');
+        const some = it.fields.booking === 'Only some days' && sched;
+        const booked = some ? sched.days.filter((x) => SD.crewOnDay(it, x.id)).length : totalDays;
+        days = booked + (+d.prepDays || 0);
+        basis = (some ? `booked ${booked} of ${totalDays} shoot days` : `${totalDays} shoot days`) + (+d.prepDays ? ` + ${d.prepDays} prep` : '');
+        const kit = SD.parseMoney(it.fields.kitFee);
+        if (kit && pr.unit === 'per shoot day') { pr.price += kit; basis += ' · incl. kit fee'; }
+      } else if (it.category === 'extras' && pr.unit === 'per shoot day') {
+        // every extra is paid for each day they are needed: the most needed in one scene that day
+        ids = sceneIds((x) => x.items.has(it.id));
+        const need = (sids) => Math.max(0, ...sids.map((id) => SD.extrasIn(it, id)));
+        const onDays = schedDays.map((day) => need(day.filter((id) => ids.includes(id)))).reduce((a, b) => a + b, 0);
+        const rest = ids.filter((id) => !scheduled.has(id));
+        days = onDays + estimateDays(rest) * need(rest);
+        basis = ids.length ? `${ids.length} scene${ids.length === 1 ? '' : 's'} · ${days} person-day${days === 1 ? '' : 's'}` : 'not tagged in a scene';
       } else {
         const n = it.name.trim().toUpperCase();
         ids = sceneIds((x) => x.items.has(it.id) || (it.category === 'location' && n && (x.loc === n || x.loc.startsWith(n + ' ') || x.loc.includes(' ' + n) || x.loc.startsWith(n))));
         days = daysFor(ids);
         basis = ids.length ? `${ids.length} scene${ids.length === 1 ? '' : 's'}` : it.category === 'location' ? 'in no scene heading yet' : 'not tagged in a scene';
+        const reh = it.category === 'stunts' ? Math.max(0, parseInt(it.fields.rehearsalDays, 10) || 0) : 0;
+        if (reh) { days += reh; basis += ` + ${reh} rehearsal day${reh === 1 ? '' : 's'}`; }
       }
       const key = 'item:' + it.id;
       const o = d.over[key] || {};

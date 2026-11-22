@@ -62,7 +62,60 @@
       { key: 'continuity', label: 'Continuity notes', type: 'textarea', wide: true, help: 'Damage, dirt, changes between scenes…' },
     ],
   });
+  const placeMeaning = {
+        title: 'What the place means', fields: [
+          { key: 'meaning', label: 'What it means to the characters', type: 'textarea', wide: true, help: 'Home, prison, escape, a memory… and is it the same for everyone?' },
+          { key: 'placePower', label: 'Who has power here? Who is only a guest?', type: 'textarea', wide: true },
+          { key: 'onlyHere', label: 'What can only happen here?', type: 'textarea', wide: true },
+          { key: 'placeSecret', label: 'The secret of the place', type: 'textarea', wide: true },
+          { key: 'placeChange', label: 'How it changes between the first and the last time we see it', type: 'textarea', wide: true },
+        ],
+      };
+  const placeSenses = {
+        title: 'The senses', fields: [
+          { key: 'sound', label: 'Sound', type: 'textarea' },
+          { key: 'smell', label: 'Smell', type: 'textarea' },
+          { key: 'light', label: 'Light', type: 'textarea' },
+          { key: 'temperature', label: 'Temperature & air', type: 'textarea' },
+        ],
+      };
   const production = (linkLabel, inverse) => [itemDetails(linkLabel, inverse), procurement, contact('Supplier / contact')];
+  SD.DEPARTMENTS = ['Direction', 'Production', 'Camera', 'Grip', 'Electric', 'Sound', 'Art', 'Wardrobe', 'Makeup & hair', 'Locations', 'Stunts', 'Special effects', 'Transport', 'Catering', 'Post-production', 'Other'];
+  const lookSection = (what) => ({
+    title: 'The look', fields: [
+      { key: 'usedBy', label: 'Worn by', type: 'link', target: 'character', multi: true, inverse: what, wide: true },
+      { key: 'lookType', label: 'Kind of look', type: 'select', options: ['Everyday', 'Period', 'Glamour', 'Injury', 'Illness', 'Ageing', 'Prosthetic', 'Fantasy / special'] },
+      { key: 'chairTime', label: 'Time in the chair (minutes)' },
+      { key: 'artist', label: 'Artist' },
+      { key: 'lookStory', label: 'What it tells us', type: 'textarea', wide: true, help: 'A fresh bruise says something different from an old one.' },
+      { key: 'products', label: 'Products & allergies', type: 'textarea', wide: true },
+      { key: 'removal', label: 'Reset between takes / removal', type: 'textarea', wide: true },
+      { key: 'continuity', label: 'Other continuity notes', type: 'textarea', wide: true },
+    ],
+  });
+  const effectForm = (one) => [
+    {
+      title: 'The effect', fields: [
+        { key: 'see', label: 'What the audience should see', type: 'textarea', wide: true },
+        { key: 'how', label: 'How', type: 'select', options: ['Practical (on set)', 'Digital (in post)', 'Both', 'Not decided'] },
+        { key: 'complexity', label: 'Complexity', type: 'select', options: ['Simple', 'Medium', 'Complex', 'Very complex'] },
+        { key: 'shots', label: 'Number of shots' },
+        { key: 'supervisor', label: 'Supervisor on set', type: 'select', options: ['Booked', 'Needed', 'Not needed'] },
+        { key: 'method', label: 'How it is done', type: 'textarea', wide: true },
+        one === 'Visual effect' ? { key: 'plates', label: 'What to shoot on set', type: 'textarea', wide: true, help: 'Clean plates, tracking markers, reference photos, a green screen…' } : { key: 'safety', label: 'Safety notes', type: 'textarea', wide: true },
+      ],
+    },
+    contact('Vendor / contact'),
+  ];
+  const motifSection = (title, more) => ({
+    title, fields: [
+      { key: 'diegetic', label: 'Who hears it', type: 'select', options: ['The characters (in the scene)', 'Only the audience (score)', 'Both'] },
+      { key: 'motif', label: 'What it stands for', type: 'textarea', wide: true, help: 'e.g. “the foghorn means Elsa’s husband”. A sound that returns becomes a motif.' },
+      { key: 'motifScenes', label: 'Comes back in', type: 'scenes', wide: true },
+      { key: 'motifChange', label: 'How it changes each time', type: 'textarea', wide: true },
+      ...more,
+    ],
+  });
   const generic = [{ title: 'Details', fields: [{ key: 'quantity', label: 'Quantity' }, { key: 'notes', label: 'Notes', type: 'textarea', wide: true }] }];
 
   SD.CATALOG_FORMS = {
@@ -158,12 +211,32 @@
       {
         title: 'Roles', fields: [
           { key: 'consideredFor', label: 'Considered for', type: 'link', target: 'character', multi: true, inverse: 'Actors considered', wide: true },
-          { key: 'agent', label: 'Agent / agency' },
           { key: 'union', label: 'Union / membership' },
         ],
       },
-      { title: 'Availability', fields: [{ key: 'startDate', label: 'Available from' }, { key: 'endDate', label: 'Available until' }, { key: 'availabilityNotes', label: 'Notes', type: 'textarea', wide: true }] },
+      {
+        title: 'Availability', fields: [
+          { key: 'startDate', label: 'Available from', type: 'date' },
+          { key: 'endDate', label: 'Available until', type: 'date' },
+          { key: 'unavailable', label: 'Dates they cannot work', type: 'textarea', wide: true, help: 'One date or range per line, e.g. 2027-05-04 or 2027-05-10 to 2027-05-12. The shooting schedule warns you when they are booked on one of these days.' },
+          { key: 'availabilityNotes', label: 'Notes', type: 'textarea', wide: true },
+        ],
+      },
+      {
+        title: 'Agent', fields: [
+          { key: 'agent', label: 'Agent / agency' },
+          { key: 'agentEmail', label: 'Agent email', type: 'email' },
+          { key: 'agentPhone', label: 'Agent phone' },
+        ],
+      },
       contact(),
+      {
+        title: 'On set', fields: [
+          { key: 'dietary', label: 'Dietary needs' },
+          { key: 'access', label: 'Access needs' },
+          { key: 'onSetNotes', label: 'Other needs', type: 'textarea', wide: true, help: 'Allergies, medication, a quiet room, travel…' },
+        ],
+      },
       {
         title: 'Physical description', fields: [
           { key: 'height', label: 'Height' }, { key: 'weight', label: 'Weight' }, { key: 'eyes', label: 'Eyes' },
@@ -178,8 +251,21 @@
       },
     ],
     crew: [
-      { title: 'Role', fields: [{ key: 'department', label: 'Department' }, { key: 'position', label: 'Position' }, { key: 'rate', label: 'Rate' }] },
-      { title: 'Availability', fields: [{ key: 'startDate', label: 'Available from' }, { key: 'endDate', label: 'Available until' }] },
+      {
+        title: 'Role', fields: [
+          { key: 'department', label: 'Department', type: 'select', options: SD.DEPARTMENTS },
+          { key: 'position', label: 'Position' },
+          { key: 'kitFee', label: 'Kit fee (per shoot day)', help: 'Added to their fee in the budget.' },
+        ],
+      },
+      {
+        title: 'Booking', fields: [
+          { key: 'booking', label: 'Booked for', type: 'select', options: ['Every shoot day', 'Only some days'] },
+          { key: 'bookedDays', label: 'Shoot days', type: 'shootdays', wide: true, help: 'Pick the days from the shooting schedule. Used by the budget and the call sheets.' },
+          { key: 'startDate', label: 'Available from', type: 'date' },
+          { key: 'endDate', label: 'Available until', type: 'date' },
+        ],
+      },
       contact(),
     ],
     location: [
@@ -190,23 +276,8 @@
           { key: 'standsIn', label: 'Real place it stands in for', help: 'e.g. a café that plays the "Kitchen".' },
         ],
       },
-      {
-        title: 'What the place means', fields: [
-          { key: 'meaning', label: 'What it means to the characters', type: 'textarea', wide: true, help: 'Home, prison, escape, a memory… and is it the same for everyone?' },
-          { key: 'power', label: 'Who has power here? Who is only a guest?', type: 'textarea', wide: true },
-          { key: 'onlyHere', label: 'What can only happen here?', type: 'textarea', wide: true },
-          { key: 'placeSecret', label: 'The secret of the place', type: 'textarea', wide: true },
-          { key: 'placeChange', label: 'How it changes between the first and the last time we see it', type: 'textarea', wide: true },
-        ],
-      },
-      {
-        title: 'The senses', fields: [
-          { key: 'sound', label: 'Sound', type: 'textarea' },
-          { key: 'smell', label: 'Smell', type: 'textarea' },
-          { key: 'light', label: 'Light', type: 'textarea' },
-          { key: 'temperature', label: 'Temperature & air', type: 'textarea' },
-        ],
-      },
+      placeMeaning,
+      placeSenses,
       contact(),
       {
         title: 'Facility information', fields: [
@@ -223,21 +294,141 @@
         ],
       },
     ],
-    wardrobe: production('Worn by', 'Wardrobe'),
+    wardrobe: [
+      {
+        title: 'Costume', fields: [
+          { key: 'usedBy', label: 'Worn by', type: 'link', target: 'character', multi: true, inverse: 'Wardrobe', wide: true },
+          { key: 'wornScenes', label: 'Worn in scenes', type: 'scenes', tag: true, wide: true, help: 'Or plan all of a character’s costumes at once on their page, under “Costumes”.' },
+          { key: 'quantity', label: 'Copies', help: 'Extra copies for damage, stunts or doubles.' },
+          { key: 'size', label: 'Size' },
+          { key: 'color', label: 'Colour' },
+          { key: 'era', label: 'Era / period' },
+          { key: 'fabric', label: 'Fabric / material' },
+          { key: 'continuity', label: 'Other continuity notes', type: 'textarea', wide: true },
+        ],
+      },
+      procurement, contact('Supplier / contact'),
+    ],
     prop: production('Used by', 'Props'),
-    makeup: production('Used by', 'Makeup'),
-    hair: production('Used by', 'Hair'),
-    weapon: production('Used by', 'Weapons'),
-    vehicle: production('Driven / used by', 'Vehicles'),
-    animal: [{ title: 'Animal', fields: [{ key: 'species', label: 'Species / breed' }, { key: 'handler', label: 'Handler' }, { key: 'usedBy', label: 'Owned by / with', type: 'link', target: 'character', multi: true, inverse: 'Animals', wide: true }, { key: 'notes', label: 'Care & safety notes', type: 'textarea', wide: true }] }, contact('Handler / supplier')],
-    set: [{ title: 'Set', fields: [{ key: 'stage', label: 'Stage / studio' }, { key: 'buildStatus', label: 'Build status', type: 'select', options: ['Design', 'Building', 'Ready', 'Struck'] }, { key: 'notes', label: 'Notes', type: 'textarea', wide: true }] }, procurement],
+    makeup: [lookSection('Makeup'), procurement, contact('Supplier / contact')],
+    hair: [lookSection('Hair'), procurement, contact('Supplier / contact')],
+    weapon: [
+      {
+        title: 'The weapon', check: (it) => {
+          const f = it.fields || {};
+          if (/blank|real/i.test(f.weaponType || '') && !String(f.armourer || '').trim()) return 'Blank-firing and real (deactivated) weapons need a licensed armourer on set.';
+          return null;
+        }, fields: [
+          { key: 'usedBy', label: 'Used by', type: 'link', target: 'character', multi: true, inverse: 'Weapons', wide: true },
+          { key: 'weaponType', label: 'Type', type: 'select', options: ['Replica (does not fire)', 'Rubber / foam', 'Blank-firing', 'Blade (blunted)', 'Real, deactivated', 'Other'] },
+          { key: 'quantity', label: 'How many' },
+          { key: 'armourer', label: 'Armourer' },
+          { key: 'licence', label: 'Licence / permit' },
+          { key: 'safety', label: 'Safety notes', type: 'textarea', wide: true, help: 'Who handles it, where it is kept between takes, who it may be pointed at.' },
+        ],
+      },
+      procurement, contact('Supplier / contact'),
+    ],
+    vehicle: [
+      {
+        title: 'The vehicle', fields: [
+          { key: 'usedBy', label: 'Driven by', type: 'link', target: 'character', multi: true, inverse: 'Vehicles', wide: true },
+          { key: 'vehicleMeaning', label: 'What it means to them', type: 'textarea', wide: true, help: 'A first car, a dead father’s van, a stolen getaway car…' },
+          { key: 'vehicleUse', label: 'Used as', type: 'select', options: ['Picture car (seen up close)', 'Background', 'Towed / process rig', 'Stunt car'] },
+          { key: 'driver', label: 'Who drives on set', type: 'select', options: ['The actor', 'A precision driver', 'Towed, no driver', 'Parked'] },
+          { key: 'makeModel', label: 'Make & model' },
+          { key: 'year', label: 'Year' },
+          { key: 'color', label: 'Colour' },
+          { key: 'plate', label: 'Number plate' },
+          { key: 'quantity', label: 'How many (doubles)' },
+          { key: 'continuity', label: 'Other continuity notes', type: 'textarea', wide: true },
+        ],
+      },
+      procurement, contact('Supplier / contact'),
+    ],
+    animal: [
+      {
+        title: 'Animal', fields: [
+          { key: 'species', label: 'Species / breed' },
+          { key: 'quantity', label: 'How many (doubles)' },
+          { key: 'usedBy', label: 'Owned by / with', type: 'link', target: 'character', multi: true, inverse: 'Animals', wide: true },
+          { key: 'animalMeaning', label: 'What the animal shows about its owner', type: 'textarea', wide: true },
+          { key: 'beats', label: 'What it has to do', type: 'textarea', wide: true, help: 'One action per line: “barks at the door”, “lies still on the bed”. The trainer needs this list early.' },
+        ],
+      },
+      {
+        title: 'Welfare & safety', check: (it) => (it.fields.welfare === 'Needed' ? 'A welfare officer is needed but not booked yet.' : null), fields: [
+          { key: 'handler', label: 'Handler / trainer' },
+          { key: 'welfare', label: 'Welfare officer on set', type: 'select', options: ['Booked', 'Needed', 'Not needed'] },
+          { key: 'workHours', label: 'Maximum working hours' },
+          { key: 'restBreaks', label: 'Rest breaks' },
+          { key: 'notes', label: 'Care & safety notes', type: 'textarea', wide: true },
+        ],
+      },
+      contact('Handler / supplier'),
+    ],
+    set: [
+      {
+        title: 'Set', fields: [
+          { key: 'playsLocation', label: 'Plays the location', type: 'link', target: 'location', inverse: 'Built as a set', wide: true },
+          { key: 'stage', label: 'Stage / studio' },
+          { key: 'buildStatus', label: 'Build status', type: 'select', options: ['Design', 'Building', 'Ready', 'Struck'] },
+          { key: 'dimensions', label: 'Size' },
+          { key: 'wildWalls', label: 'Wild walls — what has to move for the camera', type: 'textarea', wide: true },
+          { key: 'notes', label: 'Notes', type: 'textarea', wide: true },
+        ],
+      },
+      placeMeaning, placeSenses, procurement,
+    ],
     setdressing: production('Belongs to', 'Set dressing'),
     equipment: [itemDetails('Used by', 'Equipment'), procurement, contact('Supplier / contact')],
-    stunts: [{ title: 'Stunt', fields: [{ key: 'performer', label: 'Performed by', type: 'link', target: 'actor', inverse: 'Stunts' }, { key: 'double', label: 'Doubling for', type: 'link', target: 'character', inverse: 'Stunts' }, { key: 'coordinator', label: 'Coordinator' }, { key: 'safety', label: 'Safety notes', type: 'textarea', wide: true }] }],
-    extras: [{ title: 'Extras', fields: [{ key: 'quantity', label: 'How many' }, { key: 'look', label: 'Look / wardrobe', type: 'textarea', wide: true }, { key: 'notes', label: 'Notes', type: 'textarea', wide: true }] }],
-    sfx: generic, vfx: generic, other: generic,
-    sound: [{ title: 'Sound', fields: [{ key: 'source', label: 'Source / file' }, { key: 'rights', label: 'Rights / licence' }, { key: 'notes', label: 'Notes', type: 'textarea', wide: true }] }],
-    music: [{ title: 'Music', fields: [{ key: 'composer', label: 'Composer / artist' }, { key: 'source', label: 'Source / file' }, { key: 'rights', label: 'Rights / licence' }, { key: 'cue', label: 'Cue notes', type: 'textarea', wide: true }] }],
+    stunts: [
+      {
+        title: 'Stunt', check: (it) => {
+          const f = it.fields || {};
+          if (f.risk === 'High' && f.insurance !== 'Arranged') return 'A high-risk stunt: check the insurance before the shoot.';
+          if ((f.risk === 'High' || f.risk === 'Medium') && !(+f.rehearsalDays > 0)) return 'No rehearsal planned yet. Most stunts need at least one rehearsal day.';
+          return null;
+        }, fields: [
+          { key: 'performer', label: 'Performed by', type: 'link', target: 'actor', inverse: 'Stunts' },
+          { key: 'double', label: 'Doubling for', type: 'link', target: 'character', inverse: 'Stunts' },
+          { key: 'stuntWhat', label: 'What happens', type: 'textarea', wide: true, help: 'In the order the audience sees it.' },
+          { key: 'risk', label: 'Risk', type: 'select', options: ['Low', 'Medium', 'High'] },
+          { key: 'rehearsalDays', label: 'Rehearsal days', help: 'Added to the stunt’s days in the budget.' },
+          { key: 'coordinator', label: 'Coordinator' },
+          { key: 'insurance', label: 'Insurance', type: 'select', options: ['Not needed', 'Needed', 'Arranged'] },
+          { key: 'gear', label: 'Gear & rigging', type: 'textarea', wide: true },
+          { key: 'safety', label: 'Safety notes', type: 'textarea', wide: true },
+        ],
+      },
+    ],
+    extras: [
+      {
+        title: 'Extras', fields: [
+          { key: 'extraType', label: 'Kind', type: 'select', options: ['Background', 'Crowd', 'Featured', 'Stand-in', 'Photo double'] },
+          { key: 'quantity', label: 'How many (usually)' },
+          { key: 'sceneCounts', label: 'How many in each scene', type: 'counts', wide: true, help: 'The budget pays each extra for every shoot day they are needed: the most needed in one scene that day.' },
+          { key: 'ageRange', label: 'Age range' },
+          { key: 'look', label: 'Look / wardrobe', type: 'textarea', wide: true },
+          { key: 'notes', label: 'Notes', type: 'textarea', wide: true },
+        ],
+      },
+    ],
+    sfx: effectForm('Special effect'),
+    vfx: effectForm('Visual effect'),
+    other: generic,
+    sound: [motifSection('Sound', [
+      { key: 'source', label: 'Source / file' },
+      { key: 'rights', label: 'Rights / licence' },
+      { key: 'notes', label: 'Notes', type: 'textarea', wide: true },
+    ])],
+    music: [motifSection('Music', [
+      { key: 'composer', label: 'Composer / artist' },
+      { key: 'rightsStatus', label: 'Rights', type: 'select', options: ['Original score', 'To clear', 'Cleared', 'Licensed', 'Public domain'] },
+      { key: 'source', label: 'Source / file' },
+      { key: 'rights', label: 'Licence details' },
+      { key: 'cue', label: 'Cue notes', type: 'textarea', wide: true },
+    ])],
   };
 
   // Prices for the budget. Characters cost what their actor costs.
@@ -281,6 +472,84 @@
       if (sc) return { doc: d, scene: sc };
     }
     return null;
+  };
+
+  // ---------- continuity: how an item changes through the story ----------
+  SD.STATE_CATEGORIES = new Set(['wardrobe', 'makeup', 'hair', 'prop', 'setdressing', 'vehicle', 'weapon', 'animal', 'set', 'other']);
+  // where a scene sits: { doc, i, scene }
+  SD.scenePos = (project, id) => {
+    for (const d of project.documents) {
+      if (d.kind !== 'script') continue;
+      const scs = SD.getScenes(d);
+      const i = scs.findIndex((s) => s.id === id);
+      if (i >= 0) return { doc: d, i, scene: scs[i] };
+    }
+    return null;
+  };
+  SD.itemStates = (it) => (Array.isArray(it.states) ? it.states : []);
+  // the state an item is in during a scene: { state, index } or null
+  SD.stateAt = (project, it, sceneId) => {
+    const states = SD.itemStates(it);
+    if (!states.length) return null;
+    const here = SD.scenePos(project, sceneId);
+    if (!here) return null;
+    let best = null, bestI = -1;
+    states.forEach((st, k) => {
+      if (!st.from) { if (bestI < 0 && !best) best = { state: st, index: k }; return; }
+      const at = SD.scenePos(project, st.from);
+      if (at && at.doc === here.doc && at.i <= here.i && at.i >= bestI) { best = { state: st, index: k }; bestI = at.i; }
+    });
+    return best;
+  };
+  // states listed in story order must start in later and later scenes
+  SD.stateProblems = (project, it) => {
+    const out = [];
+    let last = null;
+    SD.itemStates(it).forEach((st, k) => {
+      if (!st.from) { if (k > 0) out.push(`“${st.label || 'State ' + (k + 1)}” has no scene yet.`); return; }
+      const at = SD.scenePos(project, st.from);
+      if (!at) { out.push(`“${st.label || 'State ' + (k + 1)}” starts in a scene that was deleted.`); return; }
+      if (last && last.at.doc === at.doc && at.i < last.at.i) out.push(`“${st.label || 'State ' + (k + 1)}” (scene ${at.scene.number}) comes before “${last.st.label || 'the state before'}” (scene ${last.at.scene.number}) — it goes backwards.`);
+      last = { st, at };
+    });
+    return out;
+  };
+  // ---------- costumes: which wardrobe a character wears in a scene ----------
+  SD.costumesOf = (project, charId) => project.catalog.filter((w) => w.category === 'wardrobe' && SD.linkIds(w, 'usedBy').includes(charId));
+  SD.wornIn = (project, charId, sceneId) => SD.costumesOf(project, charId).filter((w) => SD.sceneRefs(w.fields.wornScenes).includes(sceneId));
+  SD.setWorn = (project, w, sceneId, on) => {
+    const cur = SD.sceneRefs(w.fields.wornScenes).filter((x) => x !== sceneId);
+    if (on) cur.push(sceneId);
+    if (cur.length) w.fields.wornScenes = cur; else delete w.fields.wornScenes;
+    SD.tagScene(project, w.id, sceneId, on);
+  };
+  // add or remove an item from a scene's breakdown
+  SD.tagScene = (project, itemId, sceneId, on) => {
+    for (const d of project.documents) {
+      if (d.kind !== 'script') continue;
+      const el = d.elements.find((e) => e.id === sceneId && e.type === 'scene');
+      if (!el) continue;
+      const items = (el.items || []).filter((x) => x !== itemId);
+      if (on) items.push(itemId);
+      el.items = items;
+    }
+  };
+  // ---------- people: dates they can work ----------
+  // "2027-05-04", "2027-05-10 to 2027-05-12" -> [[from, to]]
+  SD.dateRanges = (text) => String(text || '').split(/[\n;,]+/).map((l) => l.match(/(\d{4}-\d{2}-\d{2})(?:\s*(?:to|–|—|-|until|\/)\s*(\d{4}-\d{2}-\d{2}))?/)).filter(Boolean).map((m) => [m[1], m[2] || m[1]]);
+  SD.availableOn = (it, iso) => {
+    const f = it.fields || {};
+    if (!iso) return true;
+    if (f.startDate && /^\d{4}-\d{2}-\d{2}$/.test(f.startDate) && iso < f.startDate) return false;
+    if (f.endDate && /^\d{4}-\d{2}-\d{2}$/.test(f.endDate) && iso > f.endDate) return false;
+    return !SD.dateRanges(f.unavailable).some(([a, b]) => iso >= a && iso <= b);
+  };
+  SD.crewOnDay = (it, dayId) => (it.fields.booking === 'Only some days' ? (Array.isArray(it.fields.bookedDays) ? it.fields.bookedDays : []).includes(dayId) : true);
+  // extras needed in a scene
+  SD.extrasIn = (it, sceneId) => {
+    const c = it.fields.sceneCounts && it.fields.sceneCounts[sceneId];
+    const n = parseInt(c != null && c !== '' ? c : it.fields.quantity, 10);
+    return n > 0 ? n : 1;
   };
 
   // "€ 1.250,50", "1,250.50", "250" -> number

@@ -115,6 +115,28 @@
     const order = [...count.keys()].sort((a, b) => count.get(b) - count.get(a) || first.get(a) - first.get(b));
     return new Map(order.map((n, i) => [n, i + 1]));
   }
+  // things to check on a shoot day: actors who cannot work, stunts, animals, effects
+  function dayWarnings(d, x, info) {
+    const p = SD.ui.project;
+    const out = [];
+    const scenes = x.scenes.map((id) => info.get(id)).filter(Boolean);
+    const names = new Set(scenes.flatMap((s) => s.chars));
+    for (const ch of p.catalog.filter((c) => c.category === 'character' && names.has(c.name.trim().toUpperCase()))) {
+      const a = ch.links.playedBy && p.catalog.find((it) => it.id === ch.links.playedBy);
+      if (a && x.date && !SD.availableOn(a, x.date)) out.push(`${a.name} (${ch.name}) is not available on this date`);
+    }
+    const tagged = [...new Set(scenes.flatMap((s) => s.scene.el.items || []))].map((id) => p.catalog.find((it) => it.id === id)).filter(Boolean);
+    for (const it of tagged) {
+      const f = it.fields;
+      if (it.category === 'stunts' && (f.risk === 'High' || f.risk === 'Medium') && !(+f.rehearsalDays > 0)) out.push(`Stunt “${it.name}” has no rehearsal planned`);
+      if (it.category === 'stunts' && f.risk === 'High' && f.insurance !== 'Arranged') out.push(`Stunt “${it.name}”: insurance not arranged`);
+      if (it.category === 'animal' && f.welfare === 'Needed') out.push(`${it.name}: book an animal welfare officer`);
+      if ((it.category === 'sfx' || it.category === 'vfx') && f.supervisor === 'Needed') out.push(`${it.name}: a supervisor is needed on set`);
+      if (it.category === 'weapon' && /blank|real/i.test(f.weaponType || '') && !String(f.armourer || '').trim()) out.push(`${it.name}: needs an armourer`);
+    }
+    return out;
+  }
+  SD.scheduleDayWarnings = dayWarnings;
   const castList = (d) => { const s = source(d); return s ? [...cast(d, s, SD.getScenes(s)).entries()] : []; };
   const dayLines = (x, info) => x.scenes.reduce((n, id) => n + (info.get(id) ? info.get(id).lines : 0), 0);
 
@@ -190,7 +212,8 @@
           h('div', { class: 'ss-row small' },
             h('label', { title: 'Call time' }, 'Call ', h('input', { type: 'time', class: 'ss-time', value: x.call, onchange: (e) => { x.call = e.target.value; changed(); } })),
             h('span', { class: 'ss-total' + (over ? ' over' : ''), title: over ? `More than ${d.settings.maxPages} pages` : '' }, `${x.scenes.length} sc · ${lines ? SD.eighths(lines) : 0} pg`)),
-          h('textarea', { class: 'ss-notes', rows: 1, value: x.notes, placeholder: 'Notes for this day', oninput: (e) => { x.notes = e.target.value; changed(); } })),
+          h('textarea', { class: 'ss-notes', rows: 1, value: x.notes, placeholder: 'Notes for this day', oninput: (e) => { x.notes = e.target.value; changed(); } }),
+          (() => { const w = dayWarnings(d, x, info); return w.length ? h('div', { class: 'ss-warn', title: w.join('\n') }, '⚠ ' + (w.length === 1 ? w[0] : w.length + ' things to check: ' + w.join(' · '))) : null; })()),
         h('div', { class: 'ss-strips', dataset: { drop: x.id } },
           x.scenes.map((id) => (info.get(id) ? strip(info.get(id), d) : null)),
           x.scenes.length ? null : h('div', { class: 'ss-gap' }, 'Drag scenes here')));
@@ -426,6 +449,17 @@
     const catalog = project.catalog;
     const actorOf = (n) => { const ch = catalog.find((it) => it.category === 'character' && it.name.trim().toUpperCase() === n); const a = ch && ch.links && ch.links.playedBy && catalog.find((it) => it.id === ch.links.playedBy); return a ? a.name : ''; };
     const order = new Map(castList(d));
+    // costumes worn today, per character
+    const charItem = (n) => catalog.find((it) => it.category === 'character' && it.name.trim().toUpperCase() === n);
+    const costumesOf = (n) => { const ch = charItem(n); return ch ? [...new Set(scenes.flatMap((s) => SD.wornIn(project, ch.id, s.id).map((w) => w.name)))].join(', ') : ''; };
+    const tagged = [...new Set(scenes.flatMap((s) => s.scene.el.items || []))].map((id) => catalog.find((it) => it.id === id)).filter(Boolean);
+    const sceneNos = (it) => scenes.filter((s) => (s.scene.el.items || []).includes(it.id)).map((s) => s.number).join(', ');
+    const ofCat = (...cats) => tagged.filter((it) => cats.includes(it.category));
+    const extras = ofCat('extras');
+    const special = ofCat('stunts', 'sfx', 'vfx', 'weapon', 'animal', 'vehicle');
+    const crew = catalog.filter((it) => it.category === 'crew' && SD.crewOnDay(it, x.id));
+    const states = scenes.flatMap((s) => [...new Set([...(s.scene.el.items || []), ...s.chars.flatMap((n) => { const ch = charItem(n); return ch ? SD.wornIn(project, ch.id, s.id).map((w) => w.id) : []; })])].map((id) => catalog.find((it) => it.id === id)).filter((it) => it && SD.itemStates(it).length).map((it) => ({ s, it, at: SD.stateAt(project, it, s.id) })).filter((x) => x.at));
+    const noteOf = (it) => { const f = it.fields; return [f.extraType, f.risk ? 'risk ' + f.risk.toLowerCase() : '', f.handler ? 'handler ' + f.handler : '', f.armourer ? 'armourer ' + f.armourer : '', f.coordinator ? 'coordinator ' + f.coordinator : '', f.safety || f.notes || f.see || ''].filter(Boolean).join(' · '); };
     const ml = (t) => String(t || '').split('\n').map((l) => h('div', {}, l));
     return h('div', { class: 'callsheet' },
       h('div', { class: 'cs-top' },
@@ -441,8 +475,16 @@
       h('table', { class: 'cs-table' }, h('thead', {}, h('tr', {}, ['Sc', 'Set', 'D/N', 'Pages', 'Cast', 'Synopsis'].map((t) => h('th', {}, t)))),
         h('tbody', {}, scenes.map((s) => h('tr', {}, h('td', {}, s.number), h('td', {}, `${(s.setting || '').replace(/\.$/, '')} ${s.location}`), h('td', {}, s.time), h('td', {}, SD.eighths(s.lines)), h('td', {}, s.castIds.join(', ')), h('td', {}, s.synopsis))))),
       h('h2', {}, 'Cast'),
-      chars.length ? h('table', { class: 'cs-table' }, h('thead', {}, h('tr', {}, ['#', 'Character', 'Actor'].map((t) => h('th', {}, t)))),
-        h('tbody', {}, chars.sort((a, b) => (order.get(a) || 99) - (order.get(b) || 99)).map((n) => h('tr', {}, h('td', {}, order.get(n) || ''), h('td', {}, n), h('td', {}, actorOf(n)))))) : h('p', {}, 'No speaking parts.'),
+      chars.length ? h('table', { class: 'cs-table' }, h('thead', {}, h('tr', {}, ['#', 'Character', 'Actor', 'Costume'].map((t) => h('th', {}, t)))),
+        h('tbody', {}, chars.sort((a, b) => (order.get(a) || 99) - (order.get(b) || 99)).map((n) => h('tr', {}, h('td', {}, order.get(n) || ''), h('td', {}, n), h('td', {}, actorOf(n)), h('td', {}, costumesOf(n)))))) : h('p', {}, 'No speaking parts.'),
+      extras.length ? [h('h2', {}, 'Extras'), h('table', { class: 'cs-table' }, h('thead', {}, h('tr', {}, ['Extras', 'Scenes', 'How many', 'Look'].map((t) => h('th', {}, t)))),
+        h('tbody', {}, extras.map((it) => h('tr', {}, h('td', {}, it.name), h('td', {}, sceneNos(it)), h('td', {}, Math.max(...scenes.filter((s) => (s.scene.el.items || []).includes(it.id)).map((s) => SD.extrasIn(it, s.id)))), h('td', {}, it.fields.look || '')))))] : null,
+      special.length ? [h('h2', {}, 'Stunts, effects, weapons, animals & vehicles'), h('table', { class: 'cs-table' }, h('thead', {}, h('tr', {}, ['Item', 'Kind', 'Scenes', 'Notes'].map((t) => h('th', {}, t)))),
+        h('tbody', {}, special.map((it) => h('tr', {}, h('td', {}, it.name), h('td', {}, SD.categoryById(it.category).one), h('td', {}, sceneNos(it)), h('td', {}, noteOf(it))))))] : null,
+      states.length ? [h('h2', {}, 'Continuity'), h('table', { class: 'cs-table' }, h('thead', {}, h('tr', {}, ['Sc', 'Item', 'State'].map((t) => h('th', {}, t)))),
+        h('tbody', {}, states.map(({ s, it, at }) => h('tr', {}, h('td', {}, s.number), h('td', {}, it.name), h('td', {}, (at.state.label || '') + (at.state.note ? ' — ' + at.state.note : ''))))))] : null,
+      crew.length ? [h('h2', {}, 'Crew'), h('table', { class: 'cs-table' }, h('thead', {}, h('tr', {}, ['Name', 'Department', 'Position', 'Phone'].map((t) => h('th', {}, t)))),
+        h('tbody', {}, crew.sort((a, b) => (a.fields.department || '').localeCompare(b.fields.department || '')).map((it) => h('tr', {}, h('td', {}, it.name), h('td', {}, it.fields.department || ''), h('td', {}, it.fields.position || ''), h('td', {}, it.fields.cell || it.fields.phone || '')))))] : null,
       x.notes || c.notes ? [h('h2', {}, 'Notes'), x.notes ? h('p', {}, x.notes) : null, c.notes ? h('div', {}, ml(c.notes)) : null] : null);
   }
 

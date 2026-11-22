@@ -285,6 +285,23 @@ T: FADE OUT.
     { id: SD.uid(), date: '2026-05-06', call: '08:00', notes: '', scenes: [sc[5].id] },
   ];
   sch.events = [{ id: SD.uid(), date: '2026-04-28', title: 'Table read', notes: 'At the production office' }, { id: SD.uid(), date: '2026-04-30', title: 'Location scout: the Margit', notes: '' }];
+  // costumes, continuity, extras, crew booking
+  const wear = (w, ...idx) => { w.fields.wornScenes = idx.map((i) => sc[i].id); idx.forEach((i) => { sc[i].el.items = [...new Set([...(sc[i].el.items || []), w.id])]; }); };
+  const scarf = item('wardrobe', 'Her husband’s scarf', { price: '0', priceUnit: 'one-off', color: 'Faded red wool' }, { links: { usedBy: [elsa.id] } });
+  const hoodie = item('wardrobe', 'Noor’s grey hoodie', { price: '25', priceUnit: 'one-off', quantity: '3', size: 'S' }, { links: { usedBy: [noor.id] } });
+  const siteJacket = item('wardrobe', 'Tomas’s site jacket', { price: '60', priceUnit: 'one-off' }, { links: { usedBy: [tomas.id] } });
+  wear(coat, 0, 1, 2, 3, 4, 5, 6); wear(scarf, 6); wear(hoodie, 2, 3, 4, 5); wear(siteJacket, 1, 5, 6);
+  coat.states = [{ id: SD.uid(), label: 'dry' }, { id: SD.uid(), label: 'wet with spray', from: sc[3].id, note: 'Shoulders and sleeves dark with sea water' }, { id: SD.uid(), label: 'soaked', from: sc[4].id, note: 'Dripping; hair wet too' }, { id: SD.uid(), label: 'drying', from: sc[6].id }];
+  hoodie.states = [{ id: SD.uid(), label: 'clean' }, { id: SD.uid(), label: 'oil stain on the cuff', from: sc[4].id, note: 'From the wheel — left cuff' }];
+  const workers = item('extras', 'Bridge crew on the pier', { extraType: 'Crowd', quantity: '6', sceneCounts: { [sc[5].id]: 8, [sc[6].id]: 20 }, look: 'Hi-vis vests, hard hats', price: '120', priceUnit: 'per shoot day' });
+  [5, 6].forEach((i) => { sc[i].el.items = [...(sc[i].el.items || []), workers.id]; });
+  p.catalog.push(scarf, hoodie, siteJacket, workers);
+  Object.assign(fog.fields, { see: 'Thick sea fog rolling over the deck; the island disappears.', how: 'Both', complexity: 'Medium', shots: '6', supervisor: 'Booked', method: 'Fog machine on the foredeck, thickened in grading.' });
+  Object.assign(van.fields, { vehicleUse: 'Picture car (seen up close)', driver: 'Parked', makeModel: 'Ford Transit', year: '2009', color: 'White' });
+  Object.assign(dop.fields, { department: 'Camera' });
+  Object.assign(sound.fields, { department: 'Sound' });
+  Object.assign(gaffer.fields, { department: 'Electric', kitFee: '40', booking: 'Only some days', bookedDays: [sch.days[0].id, sch.days[1].id] });
+  Object.assign(aNoor.fields, { unavailable: '2026-05-05', dietary: 'Vegetarian' });
   Object.assign(sch.callsheet, { company: 'Northern Light Films (example)', producer: 'J. Example', director: 'A. Example', contact: 'production@example.com', location: 'Base: old ferry quay car park', weather: 'Check the marine forecast' });
 
   // budget

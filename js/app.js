@@ -829,6 +829,7 @@
             onclick: () => openCatalogItem(item ? item.id : null, { category: 'character', name: n }),
           }, n, actor ? h('span', { class: 'chip-sub' }, ' · ' + actor.name) : null);
         })) : h('p', { class: 'muted small' }, 'None yet — they appear automatically from Character elements.')),
+      sceneContinuitySection(d, sc),
       h('div', { class: 'ins-section' },
         h('label', { class: 'lbl' }, 'Breakdown'),
         items.length
@@ -1089,6 +1090,7 @@
     const scenes = SD.getScenes(d);
     if (tab === 'health') return healthReport(d);
     if (tab === 'setups') return setupsReport(d);
+    if (tab === 'continuity') return continuityReport(d);
     if (tab === 'scenes') {
       return reportTable(['#', 'Scene', 'Page', 'Length', 'Characters', 'Synopsis'], scenes.map((s) => [
         s.number, s.el.text.toUpperCase() || '—', s.page, SD.eighths(s.lines), SD.sceneCharacters(d, s).join(', '), s.el.synopsis || '',
@@ -1138,7 +1140,7 @@
   }
 
   function renderReports(root, d) {
-    const tabs = [['health', 'Health'], ['setups', 'Setups & payoffs'], ['scenes', 'Scenes'], ['characters', 'Characters'], ['locations', 'Locations'], ['breakdown', 'Breakdown sheets']];
+    const tabs = [['health', 'Health'], ['setups', 'Setups & payoffs'], ['continuity', 'Continuity'], ['scenes', 'Scenes'], ['characters', 'Characters'], ['locations', 'Locations'], ['breakdown', 'Breakdown sheets']];
     const words = SD.wordCount(d);
     const est = SD.estimate(d);
     const scenes = SD.getScenes(d);
@@ -2462,6 +2464,12 @@
       let control;
       if (f.type === 'link') control = linkControl(c, f, cb);
       else if (f.type === 'scenes') control = sceneLinksControl(c, f, changed);
+      else if (f.type === 'shootdays') control = shootDaysControl(c, f, changed);
+      else if (f.type === 'counts') control = countsControl(c, f, changed);
+      else if (f.type === 'date') {
+        const v = c.fields[f.key] || '';
+        control = h('input', { class: 'input', id, type: !v || /^\d{4}-\d{2}-\d{2}$/.test(v) ? 'date' : 'text', value: v, onchange: (e) => { if (e.target.value) c.fields[f.key] = e.target.value; else delete c.fields[f.key]; changed(); } });
+      }
       else if (f.type === 'select') {
         control = h('select', { class: 'select', id, onchange: (e) => { if (e.target.value) c.fields[f.key] = e.target.value; else delete c.fields[f.key]; changed(); cb.onRename(); } },
           h('option', { value: '' }, '—'), f.options.map((o) => h('option', { value: o, selected: c.fields[f.key] === o }, o)));
@@ -2481,7 +2489,7 @@
         f.help ? h('div', { class: 'help-text' }, f.help) : null, extra);
     };
 
-    const filled = (sec) => sec.fields.filter((f) => (f.type === 'link' ? SD.linkIds(c, f.key).length : Array.isArray(c.fields[f.key]) ? c.fields[f.key].length : String(c.fields[f.key] || '').trim())).length;
+    const filled = (sec) => sec.fields.filter((f) => (f.type === 'link' ? SD.linkIds(c, f.key).length : c.fields[f.key] && typeof c.fields[f.key] === 'object' ? Object.keys(c.fields[f.key]).length : String(c.fields[f.key] || '').trim())).length;
     const sections = SD.formFor(c.category).map((sec, i) => {
       const n = filled(sec);
       const det = h('details', { class: 'fsection', open: i === 0 || n > 0 || state.openSections?.has(c.category + sec.title) },
@@ -2620,6 +2628,8 @@
         h('input', { class: 'input', placeholder: 'Searchable keywords', value: c.tags, oninput: (e) => { c.tags = e.target.value; changed(); } })),
       inverse.length ? h('details', { class: 'fsection', open: true }, h('summary', {}, 'Linked'), h('div', { class: 'fgrid' }, inverse)) : null,
       sections,
+      costumePlotSection(c),
+      statesSection(c),
       appears,
       everywhereSection(c),
       discoverSection(c),
@@ -2677,10 +2687,22 @@
         } else if (f.type === 'scenes') {
           const scs = SD.sceneRefs(c.fields[f.key]).map((id) => SD.findScene(state.project, id)).filter(Boolean);
           if (scs.length) rows.push([f.label, scs.map((x) => 'Scene ' + x.scene.number).join(', ')]);
-        } else if (String(c.fields[f.key] || '').trim()) rows.push([f.label, c.fields[f.key]]);
+        } else if (f.type === 'counts') {
+          const parts = Object.entries(c.fields[f.key] || {}).map(([id, n]) => { const l = SD.findScene(state.project, id); return l ? `scene ${l.scene.number}: ${n}` : null; }).filter(Boolean);
+          if (parts.length) rows.push([f.label, parts.join(', ')]);
+        } else if (f.type === 'shootdays') {
+          const days = state.project.documents.filter((x) => x.kind === 'schedule').flatMap((x) => x.days.map((day, i) => ({ day, i }))).filter((x) => (c.fields[f.key] || []).includes(x.day.id));
+          if (days.length) rows.push([f.label, days.map((x) => 'Day ' + (x.i + 1) + (x.day.date ? ' (' + x.day.date + ')' : '')).join(', ')]);
+        } else if (typeof c.fields[f.key] !== 'object' && String(c.fields[f.key] || '').trim()) rows.push([f.label, c.fields[f.key]]);
       }
       if (rows.length) out.push([sec.title, rows]);
     }
+    if (c.category === 'character') {
+      const cos = SD.costumesOf(state.project, c.id).map((w, i) => [`${i + 1}. ${w.name}`, SD.sceneRefs(w.fields.wornScenes).map((id) => SD.findScene(state.project, id)).filter(Boolean).map((x) => 'scene ' + x.scene.number).join(', ') || 'no scenes yet']);
+      if (cos.length) out.push(['Costumes', cos]);
+    }
+    const sts = SD.itemStates(c).map((st, k) => { const l = st.from ? SD.findScene(state.project, st.from) : null; return [`${k + 1}. ${st.label || 'State'}`, (l ? 'from scene ' + l.scene.number : 'from the start') + (st.note ? ' — ' + st.note : '')]; });
+    if (sts.length) out.push(['Changes through the story', sts]);
     const asked = (c.interview || []).filter((x) => (x.a || '').trim()).map((x) => [x.q, x.a]);
     if (asked.length) out.push(['Interview', asked]);
     const custom = c.custom.filter((x) => (x.value || '').trim()).map((x) => [x.label || 'Note', x.value]);
@@ -5591,6 +5613,8 @@
   // =====================================================================
   // story fields: scene links, the Discover interview, setups & payoffs, gaps
   // =====================================================================
+  // replaceChildren() would print null and arrays as text
+  const fill = (el, ...kids) => { el.replaceChildren(...kids.flat(Infinity).filter((k) => k != null && k !== false && k !== '')); };
   const sceneLabel = (loc) => `Sc ${loc.scene.number} · ${(loc.scene.el.text || 'Untitled').toUpperCase().slice(0, 34)}`;
 
   function pickScene(anchor, c, done) {
@@ -5619,9 +5643,9 @@
           const loc = SD.findScene(state.project, id);
           return h('span', { class: 'chip scene-chip' + (loc ? '' : ' gone') },
             h('button', { class: 'chip-name', title: loc ? 'Open the scene' : 'This scene was deleted', onclick: () => loc && SD.ui.goToScene(loc.doc.id, id) }, loc ? sceneLabel(loc) : 'deleted scene'),
-            h('button', { class: 'chip-x', 'aria-label': 'Remove scene', onclick: () => { const left = ids.filter((x) => x !== id); if (left.length) c.fields[f.key] = left; else delete c.fields[f.key]; changed(); draw(); } }, '×'));
+            h('button', { class: 'chip-x', 'aria-label': 'Remove scene', onclick: () => { const left = ids.filter((x) => x !== id); if (left.length) c.fields[f.key] = left; else delete c.fields[f.key]; if (f.tag) SD.tagScene(state.project, c.id, id, false); changed(); draw(); } }, '×'));
         }),
-        h('button', { class: 'btn ghost small', onclick: (e) => pickScene(e.currentTarget, c, (id) => { const cur = SD.sceneRefs(c.fields[f.key]); if (!cur.includes(id)) c.fields[f.key] = [...cur, id]; changed(); draw(); }) }, '+ Scene'));
+        h('button', { class: 'btn ghost small', onclick: (e) => pickScene(e.currentTarget, c, (id) => { const cur = SD.sceneRefs(c.fields[f.key]); if (!cur.includes(id)) c.fields[f.key] = [...cur, id]; if (f.tag) SD.tagScene(state.project, c.id, id, true); changed(); draw(); }) }, '+ Scene'));
     };
     draw();
     return wrap;
@@ -5655,7 +5679,7 @@
             h('button', { class: 'btn ghost small', onclick: () => { current = null; draw(); } }, 'Stop')))
         : null;
       count.textContent = c.interview.length ? c.interview.length + ' answered' : '';
-      body.replaceChildren(
+      fill(body, 
         h('p', { class: 'muted small' }, kind === 'character' ? 'Questions to get to know them better. Some will not matter; one might change the story.' : kind === 'location' ? 'Questions to find out what this place means.' : 'Questions about why this thing is in the story.'),
         h('div', { class: 'row-gap' },
           h('button', { class: 'btn small', onclick: () => { current = pick(); if (!current) toast('You have answered (or skipped) every question here. Try another group, or write your own.'); draw(); } }, '🎲 Ask me something'),
@@ -5695,6 +5719,12 @@
       const a = wants[i].words, b = wants[j].words;
       const both = [...a].filter((w) => b.has(w)).length;
       if (a.size && b.size && both / Math.min(a.size, b.size) >= 0.6) out.push({ icon: '≈', text: `${wants[i].c.name} and ${wants[j].c.name} want nearly the same thing — rivals, or one character too many?`, go: open(wants[i].c) });
+    }
+    for (const it of items.filter((x) => SD.itemStates(x).length)) if (SD.stateProblems(p, it).some((t) => /backwards|deleted/.test(t))) out.push({ icon: '↺', text: `${it.name}: its continuity goes backwards`, go: open(it) });
+    for (const c of main) {
+      if (!SD.costumesOf(p, c.id).length) continue;
+      const bare = characterScenes(c.name).filter((u) => u.doc === d && !SD.wornIn(p, c.id, u.scene.id).length).length;
+      if (bare) out.push({ icon: '👗', text: `${c.name} has no costume set in ${bare} scene${bare === 1 ? '' : 's'}`, go: open(c) });
     }
     const unpaid = items.filter((it) => SD.sceneRefs(it.fields.setupScenes).length && !SD.sceneRefs(it.fields.payoffScenes).length);
     if (unpaid.length) out.push({ icon: '🔫', text: `${unpaid.length} thing${unpaid.length === 1 ? ' is' : 's are'} planted but never paid off: ${unpaid.slice(0, 3).map((x) => x.name).join(', ')}`, go: () => { state.docId = d.id; state.view = 'reports'; state.reportTab = 'setups'; renderDocList(); renderView(); } });
@@ -5750,6 +5780,226 @@
           h('td', {}, c.fields.contradiction || h('span', { class: 'muted' }, '—')))))))
         : h('p', { class: 'muted' }, 'Open a character in the Master Catalog and fill in “Story core” and “Stakes” to compare them here.'),
       gaps.length ? h('ul', { class: 'gap-list' }, gaps.map((g) => h('li', {}, h('span', {}, g.icon), ' ', h('button', { class: 'linklike', onclick: g.go }, g.text)))) : null);
+  }
+
+  // =====================================================================
+  // costumes, continuity states, shoot days and per-scene counts
+  // =====================================================================
+  const sceneShort = (loc) => `Sc ${loc.scene.number} · ${(loc.scene.el.text || 'Untitled').toUpperCase().slice(0, 30)}`;
+
+  // which costumes does a character wear in a scene? A popup to change it.
+  function costumeMenu(anchor, ch, sceneId, done) {
+    const p = state.project;
+    const costumes = SD.costumesOf(p, ch.id);
+    const worn = new Set(SD.wornIn(p, ch.id, sceneId).map((w) => w.id));
+    const scenes = characterScenes(ch.name);
+    const k = scenes.findIndex((x) => x.scene.id === sceneId);
+    const here = scenes[k];
+    const prev = k > 0 && scenes[k - 1].doc === here.doc ? scenes[k - 1] : null;
+    const items = costumes.map((w) => ({ label: (worn.has(w.id) ? '✓ ' : '   ') + (w.name || 'Unnamed costume'), run: () => { SD.setWorn(p, w, sceneId, !worn.has(w.id)); markDirty(); done(); } }));
+    if (costumes.length) items.push('-');
+    if (prev) items.push({ label: 'Same as the scene before (sc ' + prev.scene.number + ')', run: () => { const was = new Set(SD.wornIn(p, ch.id, prev.scene.id).map((w) => w.id)); for (const w of costumes) SD.setWorn(p, w, sceneId, was.has(w.id)); markDirty(); done(); } });
+    if (here && worn.size) items.push({ label: 'Wear this from here to the end', run: () => { for (const x of scenes.slice(k + 1).filter((x) => x.doc === here.doc)) for (const w of costumes) SD.setWorn(p, w, x.scene.id, worn.has(w.id)); markDirty(); done(); } });
+    items.push({
+      label: 'New costume…', run: async () => {
+        const name = await promptText('New costume', `${ch.name} — costume ${costumes.length + 1}`);
+        if (!name || !name.trim()) return;
+        const w = SD.newCatalogItem('wardrobe', name.trim());
+        w.links.usedBy = [ch.id];
+        p.catalog.push(w);
+        SD.setWorn(p, w, sceneId, true);
+        markDirty(); renderDocList(); done();
+      },
+    });
+    popupMenu(anchor, items);
+  }
+
+  const costumeChip = (w, n, onRemove) => h('span', { class: 'chip costume-chip', style: `--chip:${SD.categoryById('wardrobe').color}` },
+    h('button', { class: 'chip-name', title: 'Open the costume', onclick: () => openCatalogItem(w.id) }, n ? h('b', { class: 'costume-n' }, n) : null, w.name || 'Unnamed'),
+    onRemove ? h('button', { class: 'chip-x', 'aria-label': 'Take off ' + w.name, title: 'Not worn in this scene', onclick: onRemove }, '×') : null);
+
+  // the character's costume plot: every scene they are in, and what they wear
+  function costumePlotSection(c) {
+    if (c.category !== 'character') return null;
+    const p = state.project;
+    const body = h('div', { class: 'fbody' });
+    const count = h('span', { class: 'fcount' });
+    const draw = () => {
+      const scenes = characterScenes(c.name);
+      const costumes = SD.costumesOf(p, c.id);
+      const num = new Map(costumes.map((w, i) => [w.id, i + 1]));
+      let changes = 0, missing = 0, prev = null, prevDoc = null;
+      const rows = scenes.map((u) => {
+        const worn = SD.wornIn(p, c.id, u.scene.id);
+        const key = worn.map((w) => w.id).sort().join();
+        if (!key && costumes.length) missing++;
+        if (key && prev !== null && prevDoc === u.doc && key !== prev) changes++;
+        if (key) { prev = key; prevDoc = u.doc; }
+        return h('tr', { class: key || !costumes.length ? '' : 'warn-row' },
+          h('td', { class: 'scene-num' }, u.scene.number),
+          h('td', {}, h('button', { class: 'linklike', onclick: () => SD.ui.goToScene(u.doc.id, u.scene.id) }, (u.scene.el.text || 'Untitled').toUpperCase())),
+          h('td', {}, h('div', { class: 'scene-links' },
+            worn.map((w) => costumeChip(w, num.get(w.id), () => { SD.setWorn(p, w, u.scene.id, false); markDirty(); draw(); })),
+            h('button', { class: 'btn ghost small', onclick: (e) => costumeMenu(e.currentTarget, c, u.scene.id, draw) }, worn.length ? '+' : '+ Costume'))));
+      });
+      count.textContent = costumes.length ? `${costumes.length} costume${costumes.length === 1 ? '' : 's'}${changes ? ' · ' + changes + ' change' + (changes === 1 ? '' : 's') : ''}` : '';
+      fill(body, 
+        h('p', { class: 'muted small' }, 'What they wear in each scene. A character can have as many costumes as you like, and wear several at once (a coat over a uniform). Every costume is a Wardrobe item in the catalog, tagged in the scenes it is worn in.'),
+        costumes.length ? h('div', { class: 'scene-links costume-list' }, costumes.map((w) => costumeChip(w, num.get(w.id)))) : null,
+        missing && costumes.length ? h('p', { class: 'sec-check' }, `↗ No costume set in ${missing} scene${missing === 1 ? '' : 's'}.`) : null,
+        scenes.length ? h('table', { class: 'report costume-plot' }, h('tbody', {}, rows))
+          : h('p', { class: 'muted small' }, (c.name || 'This character') + ' is not in any scene yet.'),
+        h('div', { class: 'row-gap' }, h('button', {
+          class: 'btn ghost small', onclick: async () => {
+            const name = await promptText('New costume', `${c.name} — costume ${costumes.length + 1}`);
+            if (!name || !name.trim()) return;
+            const w = SD.newCatalogItem('wardrobe', name.trim());
+            w.links.usedBy = [c.id];
+            p.catalog.push(w);
+            markDirty(); renderDocList(); draw();
+          },
+        }, '+ New costume')));
+    };
+    draw();
+    return h('details', { class: 'fsection', open: SD.costumesOf(p, c.id).length > 0 }, h('summary', {}, 'Costumes', count), body);
+  }
+
+  // how a thing changes through the story: clean -> muddy (sc 4) -> torn (sc 9)
+  function statesSection(c) {
+    if (!SD.STATE_CATEGORIES.has(c.category)) return null;
+    c.states = SD.itemStates(c);
+    const p = state.project;
+    const body = h('div', { class: 'fbody' });
+    const count = h('span', { class: 'fcount' });
+    const draw = () => {
+      const problems = SD.stateProblems(p, c);
+      count.textContent = c.states.length ? c.states.length + ' state' + (c.states.length === 1 ? '' : 's') : '';
+      fill(body, 
+        h('p', { class: 'muted small' }, 'List how it looks, in story order, and the scene each look starts in — e.g. new, muddy (sc 4), torn (sc 9). The scene panel then shows the state in every scene, and Reports → Continuity warns when it goes backwards.'),
+        problems.map((t) => h('p', { class: 'sec-check' }, '↗ ' + t)),
+        h('div', { class: 'state-list' }, c.states.map((st, k) => {
+          const loc = st.from ? SD.findScene(p, st.from) : null;
+          return h('div', { class: 'state-row' },
+            h('span', { class: 'state-n' }, k + 1),
+            h('div', { class: 'state-main' },
+              h('input', { class: 'input', value: st.label || '', placeholder: k ? 'e.g. muddy, torn, healed' : 'e.g. new, clean, fresh cut', oninput: (e) => { st.label = e.target.value; markDirty(); } }),
+              h('input', { class: 'input small-input', value: st.note || '', placeholder: 'Details for the crew (which sleeve, how much blood…)', oninput: (e) => { st.note = e.target.value; markDirty(); } })),
+            h('div', { class: 'state-scene' },
+              h('button', { class: 'btn small' + (loc ? '' : ' ghost'), title: 'The scene this starts in', onclick: (e) => pickScene(e.currentTarget, c, (id) => { st.from = id; markDirty(); draw(); }) }, loc ? 'from ' + sceneShort(loc) : st.from ? 'deleted scene' : k ? 'Starts in…' : 'from the start'),
+              st.from ? h('button', { class: 'chip-x', title: 'From the start', 'aria-label': 'Clear the scene', onclick: () => { delete st.from; markDirty(); draw(); } }, '×') : null),
+            h('div', { class: 'state-tools' },
+              k ? h('button', { class: 'icon-btn', title: 'Move up', 'aria-label': 'Move up', onclick: () => { c.states.splice(k, 1); c.states.splice(k - 1, 0, st); markDirty(); draw(); } }, '↑') : null,
+              h('button', { class: 'icon-btn', title: 'Remove', 'aria-label': 'Remove state', onclick: () => { c.states.splice(k, 1); markDirty(); draw(); } }, '×')));
+        })),
+        h('button', { class: 'btn ghost small', onclick: () => { c.states.push({ id: SD.uid(), label: '' }); markDirty(); draw(); body.querySelector('.state-row:last-child input')?.focus(); } }, '+ Add a state'));
+    };
+    draw();
+    return h('details', { class: 'fsection', open: c.states.length > 0 || state.openSections?.has(c.category + 'states') }, h('summary', {}, 'Changes through the story', count), body);
+  }
+
+  // shoot days from the schedule
+  function shootDaysControl(c, f, changed) {
+    const p = state.project;
+    const wrap = h('div', { class: 'scene-links' });
+    const scheds = p.documents.filter((d) => d.kind === 'schedule');
+    const find = (id) => { for (const d of scheds) { const i = d.days.findIndex((x) => x.id === id); if (i >= 0) return { d, i, day: d.days[i] }; } return null; };
+    const label = (x) => `${scheds.length > 1 ? x.d.name + ' · ' : ''}Day ${x.i + 1}${x.day.date ? ' · ' + x.day.date : ''}`;
+    const draw = () => {
+      const ids = Array.isArray(c.fields[f.key]) ? c.fields[f.key] : [];
+      if (!scheds.some((d) => d.days.length)) { wrap.replaceChildren(h('span', { class: 'muted small' }, 'Make a shooting schedule with shoot days first.')); return; }
+      wrap.replaceChildren(
+        ...ids.map((id) => { const x = find(id); return h('span', { class: 'chip scene-chip' + (x ? '' : ' gone') }, h('span', { class: 'chip-name' }, x ? label(x) : 'deleted day'), h('button', { class: 'chip-x', 'aria-label': 'Remove day', onclick: () => { const left = ids.filter((y) => y !== id); if (left.length) c.fields[f.key] = left; else delete c.fields[f.key]; changed(); draw(); } }, '×')); }),
+        h('button', {
+          class: 'btn ghost small', onclick: (e) => popupMenu(e.currentTarget, [
+            ...scheds.flatMap((d) => d.days.map((day, i) => ({ label: (ids.includes(day.id) ? '✓ ' : '   ') + label({ d, i, day }), run: () => { c.fields[f.key] = ids.includes(day.id) ? ids.filter((y) => y !== day.id) : [...ids, day.id]; if (!c.fields[f.key].length) delete c.fields[f.key]; if (c.fields.booking !== 'Only some days') c.fields.booking = 'Only some days'; changed(); draw(); } }))),
+          ]),
+        }, '+ Day'));
+    };
+    draw();
+    return wrap;
+  }
+
+  // a number per scene (extras)
+  function countsControl(c, f, changed) {
+    const p = state.project;
+    const wrap = h('div', { class: 'counts' });
+    const draw = () => {
+      const usage = SD.catalogUsage(p).get(c.id) || [];
+      const o = c.fields[f.key] && typeof c.fields[f.key] === 'object' ? c.fields[f.key] : {};
+      fill(wrap, 
+        usage.length ? h('table', { class: 'report counts-table' }, h('tbody', {}, usage.map((u) => h('tr', {},
+          h('td', { class: 'scene-num' }, u.scene.number),
+          h('td', {}, h('button', { class: 'linklike', onclick: () => SD.ui.goToScene(u.doc.id, u.scene.id) }, (u.scene.el.text || 'Untitled').toUpperCase())),
+          h('td', {}, h('input', { class: 'input count-input', type: 'number', min: 0, value: o[u.scene.id] != null ? o[u.scene.id] : '', placeholder: c.fields.quantity || '1', oninput: (e) => { const v = e.target.value; const next = Object.assign({}, c.fields[f.key] || {}); if (v === '') delete next[u.scene.id]; else next[u.scene.id] = Math.max(0, parseInt(v, 10) || 0); if (Object.keys(next).length) c.fields[f.key] = next; else delete c.fields[f.key]; changed(); } })),
+          h('td', {}, h('button', { class: 'chip-x', title: 'Not in this scene', 'aria-label': 'Remove from scene', onclick: () => { SD.tagScene(p, c.id, u.scene.id, false); if (c.fields[f.key]) { delete c.fields[f.key][u.scene.id]; if (!Object.keys(c.fields[f.key]).length) delete c.fields[f.key]; } changed(); draw(); } }, '×'))))))
+          : h('p', { class: 'muted small' }, 'Not in any scene yet.'),
+        h('button', { class: 'btn ghost small', onclick: (e) => pickScene(e.currentTarget, c, (id) => { SD.tagScene(p, c.id, id, true); changed(); draw(); }) }, '+ Scene'));
+    };
+    draw();
+    return wrap;
+  }
+
+  // ---------- the scene panel: costumes and the state of everything ----------
+  function sceneContinuitySection(d, sc) {
+    const p = state.project;
+    const names = SD.sceneCharacters(d, sc);
+    const chars = names.map((n) => SD.findCatalogItem(p, 'character', n)).filter(Boolean);
+    const box = h('div', { class: 'ins-section' });
+    const draw = () => {
+      const wornAll = chars.flatMap((ch) => SD.wornIn(p, ch.id, sc.id));
+      const ids = [...new Set([...(sc.el.items || []), ...wornAll.map((w) => w.id)])];
+      const stated = ids.map(catalogById).filter((it) => it && SD.itemStates(it).length).map((it) => ({ it, at: SD.stateAt(p, it, sc.id) })).filter((x) => x.at);
+      fill(box, 
+        h('label', { class: 'lbl' }, 'Costumes & continuity'),
+        chars.length ? h('div', { class: 'cont-list' }, chars.map((ch) => {
+          const worn = SD.wornIn(p, ch.id, sc.id);
+          return h('div', { class: 'cont-row' },
+            h('span', { class: 'cont-who' }, ch.name),
+            h('div', { class: 'scene-links' },
+              worn.map((w) => costumeChip(w, null, () => { SD.setWorn(p, w, sc.id, false); markDirty(); draw(); })),
+              h('button', { class: 'btn ghost small', title: 'What ' + ch.name + ' wears in this scene', onclick: (e) => costumeMenu(e.currentTarget, ch, sc.id, () => { draw(); }) }, worn.length ? '+' : '+ Costume')));
+        })) : null,
+        stated.length ? h('ul', { class: 'state-now' }, stated.map(({ it, at }) => h('li', {},
+          h('button', { class: 'linklike', onclick: () => openCatalogItem(it.id) }, it.name), ': ',
+          h('b', {}, at.state.label || 'state ' + (at.index + 1)),
+          at.state.note ? h('span', { class: 'muted' }, ' — ' + at.state.note) : null))) : null,
+        !chars.length && !stated.length ? h('p', { class: 'muted small' }, 'Costumes appear here once characters speak in this scene.') : null);
+    };
+    draw();
+    return box;
+  }
+
+  // ---------- Reports → Continuity ----------
+  function continuityReport(d) {
+    const p = state.project;
+    const scenes = SD.getScenes(d);
+    const chars = p.catalog.filter((c) => c.category === 'character' && SD.costumesOf(p, c.id).length);
+    const plot = chars.length ? h('div', { class: 'chart-scroll' }, h('table', { class: 'report costume-matrix' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Character'), scenes.map((s) => h('th', { title: (s.el.text || '').toUpperCase() }, s.number)))),
+      h('tbody', {}, chars.map((c) => {
+        const num = new Map(SD.costumesOf(p, c.id).map((w, i) => [w.id, i + 1]));
+        const upper = c.name.trim().toUpperCase();
+        return h('tr', {}, h('td', {}, h('button', { class: 'linklike', onclick: () => openCatalogItem(c.id) }, c.name)),
+          scenes.map((s) => {
+            const inIt = SD.sceneCharacters(d, s).includes(upper) || (s.el.items || []).includes(c.id);
+            const worn = SD.wornIn(p, c.id, s.id);
+            if (!inIt && !worn.length) return h('td', {});
+            return h('td', { class: worn.length ? 'cm-on' : 'cm-missing', title: worn.map((w) => w.name).join(' + ') || 'No costume set' }, worn.length ? worn.map((w) => num.get(w.id)).join('+') : '?');
+          }));
+      }))),
+    h('div', { class: 'cm-legend' }, chars.map((c) => h('div', {}, h('b', {}, c.name + ': '), SD.costumesOf(p, c.id).map((w, i) => `${i + 1} = ${w.name}`).join(' · ')))))
+      : h('p', { class: 'muted' }, 'No costumes yet. Open a character in the Master Catalog and plan their costumes under “Costumes”, or use the scene panel next to the script.');
+    const items = p.catalog.filter((it) => SD.itemStates(it).length);
+    const chain = (it) => SD.itemStates(it).map((st, k) => { const loc = st.from ? SD.findScene(p, st.from) : null; return `${st.label || 'state ' + (k + 1)} (${loc ? 'sc ' + loc.scene.number : st.from ? 'deleted scene' : 'start'})`; }).join(' → ');
+    return h('div', { class: 'setups' },
+      h('section', { class: 'chart-card' }, h('h3', {}, 'Costume plot'), h('p', { class: 'muted small' }, 'Which costume each character wears in each scene. ? means they are in the scene but no costume is set.'), plot),
+      h('section', { class: 'chart-card' }, h('h3', {}, 'Changes through the story'),
+        h('p', { class: 'muted small' }, 'Costumes, wounds, props and vehicles that change, and the scene each change starts in.'),
+        items.length ? h('table', { class: 'report' }, h('thead', {}, h('tr', {}, ['Item', 'States', ''].map((x) => h('th', {}, x)))),
+          h('tbody', {}, items.map((it) => { const probs = SD.stateProblems(p, it); return h('tr', { class: probs.length ? 'warn-row' : '' },
+            h('td', {}, h('button', { class: 'linklike', onclick: () => openCatalogItem(it.id) }, it.name), h('span', { class: 'muted small' }, ' · ' + SD.categoryById(it.category).one)),
+            h('td', {}, chain(it)), h('td', {}, probs.length ? '⚠ ' + probs.join(' ') : '✓')); })))
+          : h('p', { class: 'muted' }, 'Nothing changes yet. Open a costume, makeup look or prop and add its states under “Changes through the story”.')));
   }
 
   // Print any nodes through #print-root.

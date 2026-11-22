@@ -2,8 +2,8 @@
  "app": "scriptdesk",
  "version": 1,
  "title": "Night Shift",
- "created": "2026-11-18T14:45:50.053Z",
- "modified": "2026-11-18T14:45:50.053Z",
+ "created": "2026-11-19T10:28:39.548Z",
+ "modified": "2026-11-19T10:28:39.548Z",
  "settings": {
   "pageSize": "letter",
   "sceneNumbers": false,
@@ -11,7 +11,7 @@
  },
  "documents": [
   {
-   "id": "ex00066",
+   "id": "ex0006g",
    "kind": "script",
    "scriptType": "teleplay",
    "name": "Night Shift — Pilot",
@@ -27,37 +27,37 @@
    },
    "elements": [
     {
-     "id": "ex00068",
+     "id": "ex0006i",
      "type": "act",
      "text": "TEASER"
     },
     {
-     "id": "ex00069",
+     "id": "ex0006j",
      "type": "scene",
      "text": "INT. ST. AUGUSTA HOSPITAL - EMERGENCY ROOM - NIGHT"
     },
     {
-     "id": "ex0006a",
+     "id": "ex0006k",
      "type": "action",
      "text": "Fluorescent hum. A vending machine clunks. Empty plastic chairs."
     },
     {
-     "id": "ex0006b",
+     "id": "ex0006l",
      "type": "action",
      "text": "DR. IMANI COLE (30s), scrubs, coffee in each hand, pushes through the doors with her hip."
     },
     {
-     "id": "ex0006c",
+     "id": "ex0006m",
      "type": "character",
      "text": "IMANI"
     },
     {
-     "id": "ex0006d",
+     "id": "ex0006n",
      "type": "dialogue",
      "text": "Who ordered the quiet? Because I want a refund."
     },
     {
-     "id": "ex0006e",
+     "id": "ex0006o",
      "type": "action",
      "text": "The ambulance doors BANG open. Two PARAMEDICS wheel in a gurney. On it: a man in a tuxedo, soaking wet, laughing.",
      "fmt": [
@@ -69,82 +69,82 @@
      ]
     },
     {
-     "id": "ex0006f",
+     "id": "ex0006p",
      "type": "character",
      "text": "PARAMEDIC"
     },
     {
-     "id": "ex0006g",
+     "id": "ex0006q",
      "type": "dialogue",
      "text": "Found him in the river. Says he's fine. Says his name is Frank Sinatra."
     },
     {
-     "id": "ex0006h",
+     "id": "ex0006r",
      "type": "character",
      "text": "IMANI"
     },
     {
-     "id": "ex0006i",
+     "id": "ex0006s",
      "type": "parenthetical",
      "text": "(setting the coffees down)"
     },
     {
-     "id": "ex0006j",
+     "id": "ex0006t",
      "type": "dialogue",
      "text": "They always are."
     },
     {
-     "id": "ex0006k",
+     "id": "ex0006u",
      "type": "act",
      "text": "END OF TEASER"
     },
     {
-     "id": "ex0006l",
+     "id": "ex0006v",
      "type": "act",
      "text": "ACT ONE"
     },
     {
-     "id": "ex0006m",
+     "id": "ex0006w",
      "type": "scene",
      "text": "INT. ER - TRAUMA BAY 2 - CONTINUOUS"
     },
     {
-     "id": "ex0006n",
+     "id": "ex0006x",
      "type": "action",
      "text": "Imani shines a light in \"FRANK's\" eyes. Mid 50s, silver hair, wedding ring."
     },
     {
-     "id": "ex0006o",
+     "id": "ex0006y",
      "type": "character",
      "text": "FRANK"
     },
     {
-     "id": "ex0006p",
+     "id": "ex0006z",
      "type": "dialogue",
      "text": "You have kind eyes. Tired, but kind."
     },
     {
-     "id": "ex0006q",
+     "id": "ex00070",
      "type": "character",
      "text": "IMANI"
     },
     {
-     "id": "ex0006r",
+     "id": "ex00071",
      "type": "dialogue",
      "text": "I've been awake for nineteen hours. Who are you really?"
     },
     {
-     "id": "ex0006s",
+     "id": "ex00072",
      "type": "character",
      "text": "FRANK"
     },
     {
-     "id": "ex0006t",
+     "id": "ex00073",
      "type": "dialogue",
      "text": "Tonight? Somebody who finally did something brave."
     },
     {
-     "id": "ex0006u",
+     "id": "ex00074",
      "type": "action",
      "text": "Imani notices a hospital bracelet already on his wrist. Faded. From this hospital.",
      "fmt": [
@@ -156,42 +156,42 @@
      ]
     },
     {
-     "id": "ex0006v",
+     "id": "ex00075",
      "type": "scene",
      "text": "INT. ER - NURSES' STATION - NIGHT"
     },
     {
-     "id": "ex0006w",
+     "id": "ex00076",
      "type": "action",
      "text": "Charge nurse BEN OKAFOR (40s) types with two fingers. Imani slaps the old bracelet on the desk."
     },
     {
-     "id": "ex0006x",
+     "id": "ex00077",
      "type": "character",
      "text": "IMANI"
     },
     {
-     "id": "ex0006y",
+     "id": "ex00078",
      "type": "dialogue",
      "text": "Run this number."
     },
     {
-     "id": "ex0006z",
+     "id": "ex00079",
      "type": "character",
      "text": "BEN"
     },
     {
-     "id": "ex00070",
+     "id": "ex0007a",
      "type": "dialogue",
      "text": "That's an old system number. Before the merger."
     },
     {
-     "id": "ex00071",
+     "id": "ex0007b",
      "type": "character",
      "text": "IMANI"
     },
     {
-     "id": "ex00072",
+     "id": "ex0007c",
      "type": "dialogue",
      "text": "So it's old. Run it anyway.",
      "fmt": [
@@ -203,106 +203,106 @@
      ]
     },
     {
-     "id": "ex00073",
+     "id": "ex0007d",
      "type": "action",
      "text": "Ben types. Stops. Looks up."
     },
     {
-     "id": "ex00074",
+     "id": "ex0007e",
      "type": "character",
      "text": "BEN"
     },
     {
-     "id": "ex00075",
+     "id": "ex0007f",
      "type": "dialogue",
      "text": "Imani. This man died here. Eleven years ago."
     },
     {
-     "id": "ex00076",
+     "id": "ex0007g",
      "type": "act",
      "text": "END OF ACT ONE"
     }
    ]
   },
   {
-   "id": "ex0007d",
+   "id": "ex0007n",
    "kind": "beatboard",
    "name": "Pilot structure",
-   "sourceId": "ex00066",
+   "sourceId": "ex0006g",
    "template": "threeAct",
    "beats": [
     {
-     "id": "ex0007e",
+     "id": "ex0007o",
      "title": "Set-up",
      "hint": "Who the hero is, what their world looks like and what is missing.",
      "pct": 0,
      "cards": [
       {
-       "id": "ex0007m",
-       "sceneId": "ex00069"
+       "id": "ex0007w",
+       "sceneId": "ex0006j"
       }
      ]
     },
     {
-     "id": "ex0007f",
+     "id": "ex0007p",
      "title": "Inciting incident",
      "hint": "Something happens that upsets the normal world.",
      "pct": 12,
      "cards": [
       {
-       "id": "ex0007n",
-       "sceneId": "ex0006m"
+       "id": "ex0007x",
+       "sceneId": "ex0006w"
       }
      ]
     },
     {
-     "id": "ex0007g",
+     "id": "ex0007q",
      "title": "Plot point 1",
      "hint": "The hero commits and the story turns. End of act one.",
      "pct": 25,
      "cards": [
       {
-       "id": "ex0007o",
-       "sceneId": "ex0006v"
+       "id": "ex0007y",
+       "sceneId": "ex00075"
       }
      ]
     },
     {
-     "id": "ex0007h",
+     "id": "ex0007r",
      "title": "Rising action",
      "hint": "Obstacles get harder; the hero tries and fails, learns.",
      "pct": 37,
      "cards": []
     },
     {
-     "id": "ex0007i",
+     "id": "ex0007s",
      "title": "Midpoint",
      "hint": "A big win or loss that raises the stakes and changes the goal.",
      "pct": 50,
      "cards": [
       {
-       "id": "ex0007p",
+       "id": "ex0007z",
        "text": "Act Two: Imani finds Frank’s widow — she remarried, and she is a patient upstairs.",
        "color": "#d6f0ff"
       }
      ]
     },
     {
-     "id": "ex0007j",
+     "id": "ex0007t",
      "title": "Plot point 2",
      "hint": "The lowest point; everything seems lost. End of act two.",
      "pct": 75,
      "cards": []
     },
     {
-     "id": "ex0007k",
+     "id": "ex0007u",
      "title": "Climax",
      "hint": "The final confrontation; the hero acts on what they learned.",
      "pct": 88,
      "cards": []
     },
     {
-     "id": "ex0007l",
+     "id": "ex0007v",
      "title": "Resolution",
      "hint": "The new normal. What changed?",
      "pct": 97,
@@ -311,7 +311,7 @@
    ]
   },
   {
-   "id": "ex0007c",
+   "id": "ex0007m",
    "kind": "note",
    "name": "Series bible",
    "text": "Night Shift A hospital drama where every night shift brings one patient who should not exist. Season one Pilot — the man who died eleven years ago The girl who remembers tomorrow Two patients, one name",
@@ -321,7 +321,7 @@
  ],
  "catalog": [
   {
-   "id": "ex00079",
+   "id": "ex0007j",
    "category": "character",
    "name": "IMANI",
    "description": "Brilliant, exhausted, funny when she should sleep.",
@@ -335,7 +335,7 @@
    "custom": []
   },
   {
-   "id": "ex0007a",
+   "id": "ex0007k",
    "category": "character",
    "name": "FRANK",
    "description": "Says he is Frank Sinatra. Hospital records say he died eleven years ago.",
@@ -346,7 +346,7 @@
    "custom": []
   },
   {
-   "id": "ex0007b",
+   "id": "ex0007l",
    "category": "character",
    "name": "BEN",
    "description": "",

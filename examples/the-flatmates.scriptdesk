@@ -2,8 +2,8 @@
  "app": "scriptdesk",
  "version": 1,
  "title": "The Flatmates",
- "created": "2026-11-18T14:45:50.054Z",
- "modified": "2026-11-18T14:45:50.054Z",
+ "created": "2026-11-19T10:28:39.548Z",
+ "modified": "2026-11-19T10:28:39.548Z",
  "settings": {
   "pageSize": "letter",
   "sceneNumbers": false,
@@ -11,7 +11,7 @@
  },
  "documents": [
   {
-   "id": "ex0007s",
+   "id": "ex00082",
    "kind": "script",
    "scriptType": "sitcom",
    "name": "The Flatmates — “The Plant”",
@@ -27,62 +27,62 @@
    },
    "elements": [
     {
-     "id": "ex0007u",
+     "id": "ex00084",
      "type": "act",
      "text": "ACT ONE"
     },
     {
-     "id": "ex0007v",
+     "id": "ex00085",
      "type": "scene",
      "text": "INT. FLAT - KITCHEN - MORNING"
     },
     {
-     "id": "ex0007w",
+     "id": "ex00086",
      "type": "action",
      "text": "Dishes everywhere. A sad, nearly dead house plant on the windowsill. LIV (late 20s) stares at it."
     },
     {
-     "id": "ex0007x",
+     "id": "ex00087",
      "type": "character",
      "text": "LIV"
     },
     {
-     "id": "ex0007y",
+     "id": "ex00088",
      "type": "dialogue",
      "text": "Sam. The plant."
     },
     {
-     "id": "ex0007z",
+     "id": "ex00089",
      "type": "character",
      "text": "SAM"
     },
     {
-     "id": "ex00080",
+     "id": "ex0008a",
      "type": "dialogue",
      "text": "What about the plant?"
     },
     {
-     "id": "ex00081",
+     "id": "ex0008b",
      "type": "character",
      "text": "LIV"
     },
     {
-     "id": "ex00082",
+     "id": "ex0008c",
      "type": "dialogue",
      "text": "It's dead, Sam."
     },
     {
-     "id": "ex00083",
+     "id": "ex0008d",
      "type": "character",
      "text": "SAM"
     },
     {
-     "id": "ex00084",
+     "id": "ex0008e",
      "type": "parenthetical",
      "text": "(offended)"
     },
     {
-     "id": "ex00085",
+     "id": "ex0008f",
      "type": "dialogue",
      "text": "It's resting.",
      "fmt": [
@@ -94,72 +94,72 @@
      ]
     },
     {
-     "id": "ex00086",
+     "id": "ex0008g",
      "type": "action",
      "text": "SAM (late 20s) waters it with cold coffee."
     },
     {
-     "id": "ex00087",
+     "id": "ex0008h",
      "type": "character",
      "text": "LIV"
     },
     {
-     "id": "ex00088",
+     "id": "ex0008i",
      "type": "dialogue",
      "text": "My mother gave me that plant. She's coming on Saturday."
     },
     {
-     "id": "ex00089",
+     "id": "ex0008j",
      "type": "character",
      "text": "SAM"
     },
     {
-     "id": "ex0008a",
+     "id": "ex0008k",
      "type": "dialogue",
      "text": "Then we have four days to perform a miracle."
     },
     {
-     "id": "ex0008b",
+     "id": "ex0008l",
      "type": "scene",
      "text": "INT. GARDEN CENTRE - DAY"
     },
     {
-     "id": "ex0008c",
+     "id": "ex0008m",
      "type": "action",
      "text": "Sam holds up two identical plants to a bored SHOP ASSISTANT (20s)."
     },
     {
-     "id": "ex0008d",
+     "id": "ex0008n",
      "type": "character",
      "text": "SAM"
     },
     {
-     "id": "ex0008e",
+     "id": "ex0008o",
      "type": "dialogue",
      "text": "Which one looks more like it's been loved for three years?"
     },
     {
-     "id": "ex0008f",
+     "id": "ex0008p",
      "type": "character",
      "text": "SHOP ASSISTANT"
     },
     {
-     "id": "ex0008g",
+     "id": "ex0008q",
      "type": "dialogue",
      "text": "They're both from Tuesday."
     },
     {
-     "id": "ex0008h",
+     "id": "ex0008r",
      "type": "character",
      "text": "SAM"
     },
     {
-     "id": "ex0008i",
+     "id": "ex0008s",
      "type": "dialogue",
      "text": "Perfect. Wrap the sadder one."
     },
     {
-     "id": "ex0008j",
+     "id": "ex0008t",
      "type": "act",
      "text": "END OF ACT ONE"
     }
@@ -168,7 +168,7 @@
  ],
  "catalog": [
   {
-   "id": "ex0008m",
+   "id": "ex0008w",
    "category": "character",
    "name": "LIV",
    "description": "",
@@ -179,7 +179,7 @@
    "custom": []
   },
   {
-   "id": "ex0008n",
+   "id": "ex0008x",
    "category": "character",
    "name": "SAM",
    "description": "",
@@ -190,7 +190,7 @@
    "custom": []
   },
   {
-   "id": "ex0008o",
+   "id": "ex0008y",
    "category": "prop",
    "name": "Nearly dead house plant",
    "description": "",
